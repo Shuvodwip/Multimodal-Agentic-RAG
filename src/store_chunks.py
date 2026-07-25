@@ -16,7 +16,9 @@ if __name__ == "__main__":
         ids=[f"chunk_{i}" for i in range(len(chunks))],
         documents=chunks,
         embeddings=embeddings.tolist(),
-        metadatas=[{"source": PDF_PATH, "chunk_index": i} for i in range(len(chunks))],
+        metadatas=[
+            {"source": PDF_PATH, "chunk_index": i, "type": "text"} for i in range(len(chunks))
+        ],
     )
 
     print(f"Chunks stored: {collection.count()}")
