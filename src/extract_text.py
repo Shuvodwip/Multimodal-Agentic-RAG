@@ -2,15 +2,19 @@ import fitz  # PyMuPDF
 
 PDF_PATH = "data/A Dual-Stream Multimodal Framework for Tomato Disease Detection in Unstructured Field Environments.pdf"
 
-doc = fitz.open(PDF_PATH)
 
-pages_text = []
-for page in doc:
-    pages_text.append(page.get_text())
+def extract_text(pdf_path: str) -> str:
+    doc = fitz.open(pdf_path)
+    pages_text = [page.get_text() for page in doc]
+    return "\n".join(pages_text)
 
-full_text = "\n".join(pages_text)
 
-print(f"Pages: {len(doc)}")
-print(f"Total characters: {len(full_text)}")
-print("--- First 500 chars ---")
-print(full_text[:500])
+if __name__ == "__main__":
+    full_text = extract_text(PDF_PATH)
+
+    print(f"Total characters: {len(full_text)}")
+    print("--- First 500 chars ---")
+    print(full_text[:500])
+
+    with open("data/extracted_text.txt", "w", encoding="utf-8") as f:
+        f.write(full_text)
