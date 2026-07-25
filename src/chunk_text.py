@@ -4,7 +4,7 @@ from extract_text import PDF_PATH, extract_text
 
 splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
-    chunk_overlap=50,
+    chunk_overlap=100,
 )
 
 if __name__ == "__main__":
