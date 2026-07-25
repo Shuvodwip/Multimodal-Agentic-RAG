@@ -6,3 +6,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ipynb_checkpoints/
+
+# Unpublished paper content — keep private
+data/*
+!data/.gitkeep
