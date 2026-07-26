@@ -7,16 +7,14 @@ regenerates questions that are missing from the cache.
 
 import json
 import os
-import re
 import sys
 
 import ragas_compat  # noqa: F401  (must precede any ragas import; registers VertexAI stub)
 
 from ragas import SingleTurnSample
 
-from agent import build_config, graph
+from agent import ask_agent
 from eval_baseline import load_eval_set, report, score_samples
-from tracing import span
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -25,30 +23,9 @@ CACHE_PATH = "data/eval_agent_answers.json"
 OUTPUT_PATH = "data/eval_agent_results.csv"
 
 
-def split_tool_output(text: str) -> list[str]:
-    """Split the retriever tool's joined output back into individual source chunks."""
-    parts = re.split(r"\n\n(?=\[(?:chunk|table)_\d+\])", text.strip())
-    return [p for p in parts if p]
-
-
 def run_agent(question: str, thread_id: str) -> tuple[str, list[str]]:
-    # Wrapped in the same root span the CLI uses, so evaluation runs produce complete
-    # traces (and therefore cost/latency metrics) rather than orphaned tool spans.
-    with span("agent-run", as_type="agent", input={"question": question}) as obs:
-        result = graph.invoke(
-            {"messages": [{"role": "user", "content": question}]},
-            build_config(thread_id, trace=True),
-        )
-
-        contexts = []
-        for msg in result["messages"]:
-            if msg.type == "tool" and msg.name == "retrieve_documents":
-                contexts.extend(split_tool_output(msg.content))
-
-        answer = result["messages"][-1].content
-        if obs:
-            obs.update(output=answer, metadata={"eval_thread": thread_id})
-
+    """Evaluation entry point — delegates to the same traced call path the API uses."""
+    answer, contexts, _trace_url = ask_agent(question, thread_id=thread_id)
     return answer, contexts
 
 

@@ -1,3 +1,4 @@
+import re
 import sys
 import time
 from typing import Annotated, TypedDict
@@ -93,8 +94,25 @@ def build_config(thread_id: str, trace: bool = True) -> dict:
     return config
 
 
-def ask_agent(question: str, thread_id: str = "cli", trace: bool = True) -> tuple[str, str | None]:
-    """Answer a question, returning (answer, trace_url). trace_url is None when tracing is off.
+def split_tool_output(text: str) -> list[str]:
+    """Split the retriever tool's joined output back into individual source passages."""
+    parts = re.split(r"\n\n(?=\[(?:chunk|table)_\d+\])", text.strip())
+    return [p for p in parts if p]
+
+
+def collect_sources(messages: list) -> list[str]:
+    """Every passage the retriever returned during this run, in call order."""
+    sources = []
+    for msg in messages:
+        if msg.type == "tool" and msg.name == "retrieve_documents":
+            sources.extend(split_tool_output(msg.content))
+    return sources
+
+
+def ask_agent(
+    question: str, thread_id: str = "cli", trace: bool = True
+) -> tuple[str, list[str], str | None]:
+    """Answer a question, returning (answer, retrieved_sources, trace_url).
 
     The whole run is wrapped in one root observation so retrieval, tool calls, and LLM
     generations appear as a single tree in Langfuse rather than separate traces.
@@ -103,17 +121,18 @@ def ask_agent(question: str, thread_id: str = "cli", trace: bool = True) -> tupl
 
     if not (trace and TRACING_ENABLED):
         result = graph.invoke(payload, build_config(thread_id, trace=False))
-        return result["messages"][-1].content, None
+        return result["messages"][-1].content, collect_sources(result["messages"]), None
 
     with span("agent-run", as_type="agent", input={"question": question}) as obs:
         result = graph.invoke(payload, build_config(thread_id, trace=True))
         answer = result["messages"][-1].content
+        sources = collect_sources(result["messages"])
         if obs:
-            obs.update(output=answer)
+            obs.update(output=answer, metadata={"source_count": len(sources)})
         # Must be read inside the span context — there is no active trace once it exits.
         url = trace_url()
 
-    return answer, url
+    return answer, sources, url
 
 
 if __name__ == "__main__":
@@ -128,7 +147,7 @@ if __name__ == "__main__":
         if not question:
             continue
 
-        answer, url = ask_agent(question, thread_id="session-1")
+        answer, _sources, url = ask_agent(question, thread_id="session-1")
         print(f"\n{answer}")
         if url:
             print(f"\ntrace: {url}")
