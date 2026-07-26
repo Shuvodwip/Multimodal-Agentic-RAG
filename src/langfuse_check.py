@@ -37,15 +37,18 @@ def main() -> int:
 
     print("Auth OK.")
 
-    with client.start_as_current_span(name="connection-test") as span:
-        span.update(
-            input={"note": "verifying Langfuse setup"},
-            output={"status": "ok"},
-        )
-        span.update_trace(tags=["setup-check"])
+    with client.start_as_current_observation(
+        name="connection-test",
+        as_type="span",
+        input={"note": "verifying Langfuse setup"},
+    ) as span:
+        span.update(output={"status": "ok"})
+        trace_url = client.get_trace_url()
 
     client.flush()
-    print("Test trace sent. Check the Traces view in your Langfuse project.")
+    print("Test trace sent.")
+    if trace_url:
+        print(f"View it at: {trace_url}")
     return 0
 
 
