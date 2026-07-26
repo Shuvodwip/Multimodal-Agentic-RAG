@@ -1,0 +1,27 @@
+# Keep the build context small and free of secrets.
+# Anything listed here is never sent to the Docker daemon.
+
+.git/
+.github/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Secrets — must never enter an image layer.
+.env
+
+# Unpublished paper, extracted text/images, eval caches and reports.
+data/
+
+# Vector store is built from data/ and mounted at runtime, not baked in.
+.chroma/
+
+# Not needed to run the service.
+notebooks/
+tests/
+docs/
+scripts/
+requirements.txt
