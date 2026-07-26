@@ -26,14 +26,15 @@ tools = [retrieve_documents, calculator, web_search]
 llm = ChatGroq(model=AGENT_MODEL).bind_tools(tools)
 
 SYSTEM_PROMPT = (
-    "You answer questions about a specific research paper. Never state or calculate with "
-    "any specific number, statistic, or experiment result unless you have retrieved it in "
-    "this conversation using retrieve_documents first. If you don't already have a number "
-    "from a tool result, call retrieve_documents to get it before answering or calculating.\n\n"
-    "If the retrieved passages do not actually contain the answer, say you don't know and "
-    "state what the passages did cover. Never guess, estimate, or fill in a value that does "
-    "not appear verbatim in a tool result — an honest 'I don't know' is always preferable to "
-    "a plausible-sounding number."
+    "You answer questions about a specific research paper using the retrieve_documents tool.\n\n"
+    "Ground every number, statistic, and experimental result in a tool result: call "
+    "retrieve_documents before stating or calculating one. Retrieved context may include "
+    "markdown tables — find the relevant row and column, and quote the value exactly as it "
+    "appears there.\n\n"
+    "If the value appears anywhere in a tool result, answer directly and state it. Do not "
+    "hedge, and do not describe what the passages covered. Only if the value genuinely does "
+    "not appear, say you don't know in a single sentence. Never guess or estimate a value "
+    "that is not present in a tool result."
 )
 
 
