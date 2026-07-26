@@ -2,6 +2,7 @@ import ast
 import operator
 import sys
 
+from ddgs import DDGS
 from langchain_core.tools import tool
 
 from hybrid_search import hybrid_search
@@ -50,6 +51,15 @@ def calculator(expression: str) -> str:
         return f"Error: could not evaluate '{expression}' ({e})"
 
 
+@tool
+def web_search(query: str) -> str:
+    """Search the web for current information not found in the research paper."""
+    results = DDGS().text(query, max_results=3)
+    if not results:
+        return "No results found."
+    return "\n\n".join(f"{r['title']}\n{r['href']}\n{r['body']}" for r in results)
+
+
 if __name__ == "__main__":
     print("Tool name:", retrieve_documents.name)
     print("Tool description:", retrieve_documents.description)
@@ -68,3 +78,11 @@ if __name__ == "__main__":
     print(calculator.invoke("85.29 - 61.76"))
     print(calculator.invoke("(7.29 / 100) * 14931"))
     print(calculator.invoke("__import__('os').system('dir')"))
+
+    print()
+    print("Tool name:", web_search.name)
+    print("Tool description:", web_search.description)
+    print("Tool args schema:", web_search.args)
+    print()
+
+    print(web_search.invoke("Swin Transformer tiny architecture patch size"))
