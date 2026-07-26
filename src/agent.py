@@ -3,6 +3,7 @@ from typing import Annotated, TypedDict
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -32,16 +33,19 @@ builder.add_edge(START, "agent")
 builder.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: END})
 builder.add_edge("tools", "agent")
 
-graph = builder.compile()
+checkpointer = MemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
 
 if __name__ == "__main__":
-    question = "What accuracy improvement did the meteorological integration provide?"
-    result = graph.invoke({"messages": [{"role": "user", "content": question}]})
+    config = {"configurable": {"thread_id": "session-1"}}
 
-    print("=== Full message trace ===")
-    for msg in result["messages"]:
-        print(f"[{msg.type}] {msg.content[:200] if msg.content else msg.tool_calls}")
-        print()
+    print("Type a question and press Enter (or 'quit' to exit). Memory is kept for this session.")
+    while True:
+        question = input("\n> ").strip()
+        if question.lower() in ("quit", "exit"):
+            break
+        if not question:
+            continue
 
-    print("=== Final answer ===")
-    print(result["messages"][-1].content)
+        result = graph.invoke({"messages": [{"role": "user", "content": question}]}, config)
+        print(f"\n{result['messages'][-1].content}")
