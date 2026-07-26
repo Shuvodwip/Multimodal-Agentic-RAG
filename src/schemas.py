@@ -82,3 +82,14 @@ class HealthResponse(BaseModel):
     status: str
     model: str = Field(description="Model serving agent requests.")
     tracing: bool = Field(description="Whether Langfuse tracing is active.")
+
+
+class ErrorResponse(BaseModel):
+    """Uniform error body, so clients parse one shape regardless of failure type."""
+
+    error: str = Field(description="Stable machine-readable code, e.g. rate_limited.")
+    detail: str = Field(description="Human-readable explanation safe to show a user.")
+    retry_after_seconds: float | None = Field(
+        default=None,
+        description="Suggested wait before retrying, when the failure is transient.",
+    )
