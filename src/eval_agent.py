@@ -12,10 +12,10 @@ import sys
 
 import ragas_compat  # noqa: F401  (must precede any ragas import; registers VertexAI stub)
 
-from ragas import EvaluationDataset, SingleTurnSample, evaluate
+from ragas import SingleTurnSample
 
 from agent import graph
-from eval_baseline import METRICS, RUN_CONFIG, ragas_embeddings, ragas_llm, report
+from eval_baseline import load_eval_set, report, score_samples
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -73,18 +73,20 @@ def generate_answers(eval_set: list[dict]) -> dict:
     return cache
 
 
-if __name__ == "__main__":
-    with open(EVAL_SET_PATH, encoding="utf-8") as f:
-        eval_set = json.load(f)
+def build_samples(eval_set: list[dict]) -> tuple[list[SingleTurnSample], list[str]]:
+    """Generate (or reuse cached) agent answers and wrap them as RAGAS samples.
 
+    Also returns the questions the agent answered without any retrieval call, which
+    is a grounding signal the metrics alone don't surface.
+    """
     cache = generate_answers(eval_set)
 
     missing = [item["question"] for item in eval_set if item["question"] not in cache]
     if missing:
-        print(f"\n{len(missing)} question(s) still ungenerated — re-run when quota allows:")
-        for q in missing:
-            print(f"  - {q}")
-        sys.exit(1)
+        raise RuntimeError(
+            f"{len(missing)} question(s) ungenerated (likely rate-limited); "
+            "re-run when quota allows — cached answers are preserved."
+        )
 
     samples = []
     no_retrieval = []
@@ -101,15 +103,14 @@ if __name__ == "__main__":
             )
         )
 
-    results = evaluate(
-        dataset=EvaluationDataset(samples=samples),
-        metrics=METRICS,
-        llm=ragas_llm,
-        embeddings=ragas_embeddings,
-        run_config=RUN_CONFIG,
-    )
+    return samples, no_retrieval
 
-    df = results.to_pandas()
+
+if __name__ == "__main__":
+    eval_set = load_eval_set()
+    samples, no_retrieval = build_samples(eval_set)
+
+    df = score_samples(samples)
     df.to_csv(OUTPUT_PATH, index=False)
 
     report(df, "Agentic pipeline scores")

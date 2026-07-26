@@ -77,10 +77,25 @@ def report(df, label: str) -> None:
         print("WARNING: some samples failed to score; means cover only the scored subset.")
 
 
-if __name__ == "__main__":
+def load_eval_set() -> list[dict]:
     with open(EVAL_SET_PATH, encoding="utf-8") as f:
-        eval_set = json.load(f)
+        return json.load(f)
 
+
+def score_samples(samples: list[SingleTurnSample]):
+    """Score samples with the shared judge, metrics, and throttled run config."""
+    results = evaluate(
+        dataset=EvaluationDataset(samples=samples),
+        metrics=METRICS,
+        llm=ragas_llm,
+        embeddings=ragas_embeddings,
+        run_config=RUN_CONFIG,
+    )
+    return results.to_pandas()
+
+
+def build_samples(eval_set: list[dict]) -> list[SingleTurnSample]:
+    """Generate (or reuse cached) baseline answers and wrap them as RAGAS samples."""
     cache = load_cache(CACHE_PATH)
     for i, item in enumerate(eval_set):
         question = item["question"]
@@ -92,7 +107,7 @@ if __name__ == "__main__":
         save_cache(CACHE_PATH, cache)
         print(f"[{i + 1}/{len(eval_set)}] generated | {question[:55]}...")
 
-    samples = [
+    return [
         SingleTurnSample(
             user_input=item["question"],
             retrieved_contexts=cache[item["question"]]["contexts"],
@@ -102,14 +117,10 @@ if __name__ == "__main__":
         for item in eval_set
     ]
 
-    results = evaluate(
-        dataset=EvaluationDataset(samples=samples),
-        metrics=METRICS,
-        llm=ragas_llm,
-        embeddings=ragas_embeddings,
-        run_config=RUN_CONFIG,
-    )
 
-    df = results.to_pandas()
+if __name__ == "__main__":
+    eval_set = load_eval_set()
+    samples = build_samples(eval_set)
+    df = score_samples(samples)
     df.to_csv(OUTPUT_PATH, index=False)
     report(df, "Baseline RAG scores")
