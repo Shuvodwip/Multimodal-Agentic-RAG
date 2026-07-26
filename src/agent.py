@@ -28,7 +28,11 @@ SYSTEM_PROMPT = (
     "You answer questions about a specific research paper. Never state or calculate with "
     "any specific number, statistic, or experiment result unless you have retrieved it in "
     "this conversation using retrieve_documents first. If you don't already have a number "
-    "from a tool result, call retrieve_documents to get it before answering or calculating."
+    "from a tool result, call retrieve_documents to get it before answering or calculating.\n\n"
+    "If the retrieved passages do not actually contain the answer, say you don't know and "
+    "state what the passages did cover. Never guess, estimate, or fill in a value that does "
+    "not appear verbatim in a tool result — an honest 'I don't know' is always preferable to "
+    "a plausible-sounding number."
 )
 
 
