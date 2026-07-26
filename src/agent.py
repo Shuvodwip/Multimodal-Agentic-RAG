@@ -12,6 +12,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from tools import calculator, retrieve_documents, web_search
+from tracing import TRACING_ENABLED, flush, get_callback_handler, span, trace_url
 
 load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")
@@ -80,10 +81,45 @@ builder.add_edge("tools", "agent")
 checkpointer = MemorySaver()
 graph = builder.compile(checkpointer=checkpointer)
 
-if __name__ == "__main__":
-    config = {"configurable": {"thread_id": "session-1"}}
 
+def build_config(thread_id: str, trace: bool = True) -> dict:
+    """Graph config: thread_id drives conversation memory, callbacks drive tracing."""
+    config = {"configurable": {"thread_id": thread_id}}
+    if trace:
+        handler = get_callback_handler()
+        if handler:
+            config["callbacks"] = [handler]
+    return config
+
+
+def ask_agent(question: str, thread_id: str = "cli", trace: bool = True) -> tuple[str, str | None]:
+    """Answer a question, returning (answer, trace_url). trace_url is None when tracing is off.
+
+    The whole run is wrapped in one root observation so retrieval, tool calls, and LLM
+    generations appear as a single tree in Langfuse rather than separate traces.
+    """
+    payload = {"messages": [{"role": "user", "content": question}]}
+
+    if not (trace and TRACING_ENABLED):
+        result = graph.invoke(payload, build_config(thread_id, trace=False))
+        return result["messages"][-1].content, None
+
+    with span("agent-run", as_type="agent", input={"question": question}) as obs:
+        result = graph.invoke(payload, build_config(thread_id, trace=True))
+        answer = result["messages"][-1].content
+        if obs:
+            obs.update(output=answer)
+        # Must be read inside the span context — there is no active trace once it exits.
+        url = trace_url()
+
+    return answer, url
+
+
+if __name__ == "__main__":
     print("Type a question and press Enter (or 'quit' to exit). Memory is kept for this session.")
+    if TRACING_ENABLED:
+        print("Tracing to Langfuse is on.")
+
     while True:
         question = input("\n> ").strip()
         if question.lower() in ("quit", "exit"):
@@ -91,5 +127,9 @@ if __name__ == "__main__":
         if not question:
             continue
 
-        result = graph.invoke({"messages": [{"role": "user", "content": question}]}, config)
-        print(f"\n{result['messages'][-1].content}")
+        answer, url = ask_agent(question, thread_id="session-1")
+        print(f"\n{answer}")
+        if url:
+            print(f"\ntrace: {url}")
+
+    flush()

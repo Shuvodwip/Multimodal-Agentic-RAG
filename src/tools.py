@@ -6,6 +6,7 @@ from ddgs import DDGS
 from langchain_core.tools import tool
 
 from hybrid_search import hybrid_search
+from tracing import span
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -13,8 +14,22 @@ sys.stdout.reconfigure(encoding="utf-8")
 @tool
 def retrieve_documents(query: str) -> str:
     """Retrieve relevant passages and tables from the research paper for a given query."""
-    results = hybrid_search(query, top_k=3)
-    return "\n\n".join(f"[{r['id']}]\n{r['document']}" for r in results)
+    with span("hybrid_search", as_type="retriever", input={"query": query}) as obs:
+        results = hybrid_search(query, top_k=3)
+        output = "\n\n".join(f"[{r['id']}]\n{r['document']}" for r in results)
+
+        if obs:
+            # Record which sources were retrieved and how they ranked, so a bad answer
+            # can be traced back to whether retrieval or generation was at fault.
+            obs.update(
+                output={
+                    "retrieved": [
+                        {"id": r["id"], "rrf_score": round(r["rrf_score"], 4)} for r in results
+                    ]
+                },
+                metadata={"top_k": 3, "strategy": "reciprocal-rank-fusion(vector+bm25)"},
+            )
+        return output
 
 
 _ALLOWED_OPS = {
@@ -45,19 +60,35 @@ def safe_eval(expression: str) -> float:
 @tool
 def calculator(expression: str) -> str:
     """Evaluate a basic arithmetic expression, e.g. '85.29 - 61.76' or '(7.29 / 100) * 14931'."""
-    try:
-        return str(safe_eval(expression))
-    except Exception as e:
-        return f"Error: could not evaluate '{expression}' ({e})"
+    with span("calculator", as_type="tool", input={"expression": expression}) as obs:
+        try:
+            result = str(safe_eval(expression))
+            level, message = "DEFAULT", None
+        except Exception as e:
+            result = f"Error: could not evaluate '{expression}' ({e})"
+            level, message = "WARNING", str(e)
+
+        if obs:
+            obs.update(output=result, level=level, status_message=message)
+        return result
 
 
 @tool
 def web_search(query: str) -> str:
     """Search the web for current information not found in the research paper."""
-    results = DDGS().text(query, max_results=3)
-    if not results:
-        return "No results found."
-    return "\n\n".join(f"{r['title']}\n{r['href']}\n{r['body']}" for r in results)
+    with span("web_search", as_type="tool", input={"query": query}) as obs:
+        results = DDGS().text(query, max_results=3)
+        if not results:
+            if obs:
+                obs.update(output="No results found.", level="WARNING")
+            return "No results found."
+
+        output = "\n\n".join(f"{r['title']}\n{r['href']}\n{r['body']}" for r in results)
+        if obs:
+            obs.update(
+                output={"sources": [{"title": r["title"], "url": r["href"]} for r in results]}
+            )
+        return output
 
 
 if __name__ == "__main__":
