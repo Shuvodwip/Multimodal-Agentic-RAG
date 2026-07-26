@@ -13,10 +13,9 @@ import sys
 import ragas_compat  # noqa: F401  (must precede any ragas import; registers VertexAI stub)
 
 from ragas import EvaluationDataset, SingleTurnSample, evaluate
-from ragas.metrics import AnswerRelevancy, Faithfulness
 
 from agent import graph
-from eval_baseline import ragas_embeddings, ragas_llm
+from eval_baseline import METRICS, RUN_CONFIG, ragas_embeddings, ragas_llm, report
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -104,17 +103,16 @@ if __name__ == "__main__":
 
     results = evaluate(
         dataset=EvaluationDataset(samples=samples),
-        metrics=[Faithfulness(), AnswerRelevancy(strictness=1)],  # Groq rejects n>1
+        metrics=METRICS,
         llm=ragas_llm,
         embeddings=ragas_embeddings,
+        run_config=RUN_CONFIG,
     )
 
     df = results.to_pandas()
     df.to_csv(OUTPUT_PATH, index=False)
 
-    print("\n=== Agentic pipeline scores ===")
-    print(f"Mean faithfulness:      {df['faithfulness'].mean():.3f}")
-    print(f"Mean answer relevancy:  {df['answer_relevancy'].mean():.3f}")
+    report(df, "Agentic pipeline scores")
     print(f"Questions with no retrieval call: {len(no_retrieval)}")
     for q in no_retrieval:
         print(f"  - {q}")

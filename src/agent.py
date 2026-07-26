@@ -1,8 +1,9 @@
 import sys
+import time
 from typing import Annotated, TypedDict
 
 from dotenv import load_dotenv
-from groq import BadRequestError
+from groq import BadRequestError, RateLimitError
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import MemorySaver
@@ -15,8 +16,13 @@ from tools import calculator, retrieve_documents, web_search
 load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")
 
+# Matches the baseline RAG's model (see ask.py) so agentic-vs-baseline comparisons
+# isolate the architecture rather than also changing model size. Also has a 5x larger
+# daily token budget on Groq's free tier than llama-3.3-70b (500K vs 100K).
+AGENT_MODEL = "llama-3.1-8b-instant"
+
 tools = [retrieve_documents, calculator, web_search]
-llm = ChatGroq(model="llama-3.3-70b-versatile").bind_tools(tools)
+llm = ChatGroq(model=AGENT_MODEL).bind_tools(tools)
 
 SYSTEM_PROMPT = (
     "You answer questions about a specific research paper. Never state or calculate with "
@@ -31,16 +37,30 @@ class State(TypedDict):
 
 
 MAX_RETRIES = 2
+RATE_LIMIT_RETRIES = 3
 
 
 def agent_node(state: State) -> State:
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
 
-    for attempt in range(MAX_RETRIES + 1):
+    bad_request_attempts = 0
+    rate_limit_attempts = 0
+
+    while True:
         try:
             return {"messages": [llm.invoke(messages)]}
-        except BadRequestError as e:
-            if attempt == MAX_RETRIES:
+        except RateLimitError:
+            # Per-minute token cap (6K TPM on this model); wait for the window to roll over.
+            rate_limit_attempts += 1
+            if rate_limit_attempts > RATE_LIMIT_RETRIES:
+                raise
+            wait = 20 * rate_limit_attempts
+            print(f"  [rate limited, waiting {wait}s]", flush=True)
+            time.sleep(wait)
+        except BadRequestError:
+            # Model occasionally emits a malformed tool call the API rejects outright.
+            bad_request_attempts += 1
+            if bad_request_attempts > MAX_RETRIES:
                 fallback = "Sorry, I had trouble forming a response to that. Could you rephrase the question?"
                 return {"messages": [AIMessage(content=fallback)]}
 
