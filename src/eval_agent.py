@@ -14,8 +14,9 @@ import ragas_compat  # noqa: F401  (must precede any ragas import; registers Ver
 
 from ragas import SingleTurnSample
 
-from agent import graph
+from agent import build_config, graph
 from eval_baseline import load_eval_set, report, score_samples
+from tracing import span
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -31,15 +32,24 @@ def split_tool_output(text: str) -> list[str]:
 
 
 def run_agent(question: str, thread_id: str) -> tuple[str, list[str]]:
-    config = {"configurable": {"thread_id": thread_id}}
-    result = graph.invoke({"messages": [{"role": "user", "content": question}]}, config)
+    # Wrapped in the same root span the CLI uses, so evaluation runs produce complete
+    # traces (and therefore cost/latency metrics) rather than orphaned tool spans.
+    with span("agent-run", as_type="agent", input={"question": question}) as obs:
+        result = graph.invoke(
+            {"messages": [{"role": "user", "content": question}]},
+            build_config(thread_id, trace=True),
+        )
 
-    contexts = []
-    for msg in result["messages"]:
-        if msg.type == "tool" and msg.name == "retrieve_documents":
-            contexts.extend(split_tool_output(msg.content))
+        contexts = []
+        for msg in result["messages"]:
+            if msg.type == "tool" and msg.name == "retrieve_documents":
+                contexts.extend(split_tool_output(msg.content))
 
-    return result["messages"][-1].content, contexts
+        answer = result["messages"][-1].content
+        if obs:
+            obs.update(output=answer, metadata={"eval_thread": thread_id})
+
+    return answer, contexts
 
 
 def load_cache() -> dict:
