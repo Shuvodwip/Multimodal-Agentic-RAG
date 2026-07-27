@@ -50,9 +50,11 @@ RUN mkdir -p /app/.chroma && chown app:app /app/.chroma
 
 USER app
 
-# Bake the embedding model into the image so the first request doesn't pay a download.
-# Only the text encoder is fetched — CLIP is used for image ingestion, not for serving.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# Bake the models into the image so the first request doesn't pay a download, and so
+# the container works without network access to Hugging Face. CLIP is skipped — it is
+# used for image ingestion, not for serving.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" \
+    && python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 EXPOSE 8000
 
