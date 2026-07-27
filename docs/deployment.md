@@ -45,14 +45,25 @@ than failing.
 
 ## 4. Push
 
+Hugging Face creates the Space with an initial commit, so clone it and copy the bundle
+in — `git init` in `build/space/` would produce an unrelated history that the remote
+rejects.
+
 ```bash
-cd build/space
-git init
-git remote add origin https://huggingface.co/spaces/<username>/<space-name>
+git clone https://huggingface.co/spaces/<username>/<space-name> space-repo
+cp -r build/space/. space-repo/
+cd space-repo
+
+# The Static scaffold ships an index.html that the Streamlit app does not use.
+rm -f index.html style.css
+
 git add .
 git commit -m "Deploy agentic multimodal RAG"
-git push -u origin main
+git push
 ```
+
+The SDK comes from the pushed `README.md` frontmatter, so a Space created as Static (or
+Gradio) rebuilds as Streamlit on this push.
 
 Hugging Face asks for a token as the password — create one at
 <https://huggingface.co/settings/tokens> with **write** access.
