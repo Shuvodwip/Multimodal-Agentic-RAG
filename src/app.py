@@ -6,6 +6,7 @@
 See ui_backend.py for the two backends.
 """
 
+import os
 import sys
 import tempfile
 import uuid
@@ -14,6 +15,18 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Hosted Streamlit stores configuration in st.secrets, while everything else here reads
+# environment variables (so the API, CLI, and container share one mechanism). Copy them
+# across before importing anything that constructs a client — the chat model is built at
+# import time and raises without its key.
+for _key in ("GROQ_API_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST",
+             "VISION_MODEL", "RERANK"):
+    try:
+        if _key in st.secrets and not os.getenv(_key):
+            os.environ[_key] = str(st.secrets[_key])
+    except Exception:  # noqa: BLE001 - no secrets file locally, which is normal
+        break
 
 from schemas import Source  # noqa: E402  (needs the sys.path entry above)
 from ui_backend import build_backend  # noqa: E402

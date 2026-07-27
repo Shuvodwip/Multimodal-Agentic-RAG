@@ -7,7 +7,7 @@ sdk: streamlit
 sdk_version: 1.60.0
 app_file: src/app.py
 pinned: false
-short_description: Ask questions about your documents, with cited sources and figures
+short_description: Ask questions about your documents, with cited sources
 ---
 
 # Agentic Multimodal RAG
