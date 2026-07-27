@@ -4,7 +4,7 @@ Ask questions about your own documents and get answers that show their evidence.
 PDFs, Word files, plain text, or images; the agent decides which tools each question
 needs, retrieves across prose, tables, and figures, and returns every passage it used.
 
-**[Live demo](https://share.streamlit.io)** · built entirely on free-tier services
+**[Live demo](https://multimodal-agentic-rag-rbo9fstacukssikdjlq83r.streamlit.app/)** · built entirely on free-tier services
 
 ---
 
