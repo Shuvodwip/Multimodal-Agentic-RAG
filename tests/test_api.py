@@ -15,13 +15,19 @@ from groq import APIConnectionError, RateLimitError
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import api  # noqa: E402
+from agent import AgentResult  # noqa: E402
 from api import app  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
 
 
 def stub_answer(question, thread_id="cli", trace=True):
-    return "0.9195", ["[chunk_38]\nThe proposed model reaches an mAP of 0.9195."], None
+    return AgentResult(
+        answer="0.9195",
+        passages=["[chunk_38]\nThe proposed model reaches an mAP of 0.9195."],
+        figures=[],
+        trace_url=None,
+    )
 
 
 def make_rate_limit_error(message: str) -> RateLimitError:
@@ -49,6 +55,22 @@ def test_ask_returns_answer_and_typed_sources():
         "preview": "The proposed model reaches an mAP of 0.9195.",
     }
     assert body["latency_seconds"] >= 0
+
+
+def test_ask_returns_figures_when_the_agent_found_them(monkeypatch):
+    def with_figures(question, thread_id="cli", trace=True):
+        return AgentResult(
+            answer="The figure is shown below.",
+            passages=[],
+            figures=[{"id": "image_9", "page": 5, "path": "/tmp/page5_img0.png"}],
+            trace_url=None,
+        )
+
+    monkeypatch.setattr(api, "ask_agent", with_figures)
+    body = client.post("/ask", json={"question": "Show me the confusion matrix"}).json()
+
+    # Identity and page only — the API does not serve image bytes.
+    assert body["figures"] == [{"id": "image_9", "page": 5}]
 
 
 def test_ask_generates_session_id_when_absent():

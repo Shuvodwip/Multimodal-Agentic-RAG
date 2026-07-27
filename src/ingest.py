@@ -88,13 +88,19 @@ def replace_document(pdf_path: str) -> dict:
     n_chunks = ingest_text(pdf_path)
     n_tables = ingest_tables(pdf_path)
 
+    # Figures are searchable by description even though their contents are not read,
+    # so a question about a chart can surface the chart itself as evidence.
+    from images import ingest_images
+
+    n_figures = ingest_images(pdf_path)
+
     # Keyword search holds an in-memory snapshot; without this it keeps answering
     # from the previous document.
     from bm25_search import rebuild_index
 
     rebuild_index()
 
-    return {"chunks": n_chunks, "tables": n_tables}
+    return {"chunks": n_chunks, "tables": n_tables, "figures": n_figures}
 
 
 if __name__ == "__main__":

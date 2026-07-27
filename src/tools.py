@@ -6,6 +6,7 @@ from ddgs import DDGS
 from langchain_core.tools import tool
 
 from hybrid_search import hybrid_search
+from images import search_images
 from rerank import RERANK_ENABLED
 from tracing import span
 
@@ -84,6 +85,42 @@ def calculator(expression: str) -> str:
 
         if obs:
             obs.update(output=result, level=level, status_message=message)
+        return result
+
+
+@tool
+def find_figures(query: str) -> str:
+    """Find figures, charts, or images in the document that match a visual description.
+
+    Use for questions about what a figure shows or where a chart is. This locates the
+    figure and displays it to the user; it does not read the contents of the image, so
+    describe what was found and rely on retrieve_documents for any caption text.
+    """
+    with span("find_figures", as_type="retriever", input={"query": query}) as obs:
+        hits = search_images(query, top_k=2)
+
+        if not hits:
+            if obs:
+                obs.update(output="No figures indexed.", level="WARNING")
+            return "This document has no indexed figures."
+
+        pages = ", ".join(f"page {h['page']}" for h in hits)
+        # The trailing id list is what the caller parses to render the images; keeping
+        # it in the tool output means figures are recovered from *this* turn's messages
+        # rather than by re-running the search.
+        ids = ",".join(h["id"] for h in hits)
+        result = (
+            f"Displayed {len(hits)} matching figure(s) to the user, from {pages}. "
+            "The images are now visible below your answer, so tell the user they are "
+            "shown and say which page each came from. Their visual contents cannot be "
+            "read here — use retrieve_documents if you need the caption text. "
+            f"[figures: {ids}]"
+        )
+        if obs:
+            obs.update(
+                output={"figures": [{"id": h["id"], "page": h["page"]} for h in hits]},
+                metadata={"strategy": "clip text-to-image", "top_k": 2},
+            )
         return result
 
 

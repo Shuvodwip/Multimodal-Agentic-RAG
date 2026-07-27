@@ -10,7 +10,7 @@ they scale and deploy independently.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -21,6 +21,7 @@ TIMEOUT_SECONDS = 180
 class Answer:
     text: str
     passages: list[str]
+    figures: list[dict] = field(default_factory=list)
     trace_url: str | None = None
 
 
@@ -41,8 +42,8 @@ class InProcessBackend:
         self.model = AGENT_MODEL
 
     def ask(self, question: str, session_id: str) -> Answer:
-        text, passages, trace_url = self._ask(question, thread_id=session_id)
-        return Answer(text, passages, trace_url)
+        result = self._ask(question, thread_id=session_id)
+        return Answer(result.answer, result.passages, result.figures, result.trace_url)
 
     def replace_document(self, pdf_path: str) -> dict:
         return self._replace_document(pdf_path)
@@ -89,9 +90,10 @@ class HttpBackend:
 
         payload = response.json()
         # Re-render the API's structured sources into the same "[id]\ntext" shape the
-        # in-process path yields, so the UI stays backend-agnostic.
+        # in-process path yields, so the UI stays backend-agnostic. Figures arrive as
+        # identity only — the API does not serve image bytes, so they cannot be shown.
         passages = [f"[{s['id']}]\n{s['preview']}" for s in payload.get("sources", [])]
-        return Answer(payload["answer"], passages, payload.get("trace_url"))
+        return Answer(payload["answer"], passages, [], payload.get("trace_url"))
 
     def replace_document(self, pdf_path: str) -> dict:
         raise NotImplementedError("Document upload is unavailable when using the HTTP backend.")

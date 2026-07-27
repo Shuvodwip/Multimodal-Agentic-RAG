@@ -1,6 +1,7 @@
 import re
 import sys
 import time
+from dataclasses import dataclass, field
 from typing import Annotated, TypedDict
 
 from dotenv import load_dotenv
@@ -12,7 +13,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from tools import calculator, retrieve_documents, web_search
+from images import get_figures
+from tools import calculator, find_figures, retrieve_documents, web_search
 from tracing import TRACING_ENABLED, flush, get_callback_handler, span, trace_url
 
 load_dotenv()
@@ -23,7 +25,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 # daily token budget on Groq's free tier than llama-3.3-70b (500K vs 100K).
 AGENT_MODEL = "llama-3.1-8b-instant"
 
-tools = [retrieve_documents, calculator, web_search]
+tools = [retrieve_documents, find_figures, calculator, web_search]
 llm = ChatGroq(model=AGENT_MODEL).bind_tools(tools)
 
 SYSTEM_PROMPT = (
@@ -111,10 +113,41 @@ def collect_sources(messages: list) -> list[str]:
     return sources
 
 
-def ask_agent(
-    question: str, thread_id: str = "cli", trace: bool = True
-) -> tuple[str, list[str], str | None]:
-    """Answer a question, returning (answer, retrieved_sources, trace_url).
+FIGURE_IDS = re.compile(r"\[figures: ([^\]]+)\]")
+
+
+def collect_figures(messages: list) -> list[dict]:
+    """Figures surfaced during *this* turn, so a caller can display them.
+
+    Scoped to messages after the last user question: the conversation history persists
+    across turns, so scanning all of it would keep re-showing figures from an earlier
+    question long after the topic moved on.
+    """
+    last_question = max(
+        (i for i, m in enumerate(messages) if m.type == "human"),
+        default=-1,
+    )
+
+    ids: list[str] = []
+    for msg in messages[last_question + 1 :]:
+        if msg.type == "tool" and msg.name == "find_figures":
+            match = FIGURE_IDS.search(msg.content or "")
+            if match:
+                ids = [i.strip() for i in match.group(1).split(",") if i.strip()]
+
+    return get_figures(ids)
+
+
+@dataclass
+class AgentResult:
+    answer: str
+    passages: list[str]
+    figures: list[dict]
+    trace_url: str | None = None
+
+
+def ask_agent(question: str, thread_id: str = "cli", trace: bool = True) -> AgentResult:
+    """Answer a question, returning the answer plus the evidence behind it.
 
     The whole run is wrapped in one root observation so retrieval, tool calls, and LLM
     generations appear as a single tree in Langfuse rather than separate traces.
@@ -123,18 +156,26 @@ def ask_agent(
 
     if not (trace and TRACING_ENABLED):
         result = graph.invoke(payload, build_config(thread_id, trace=False))
-        return result["messages"][-1].content, collect_sources(result["messages"]), None
+        messages = result["messages"]
+        return AgentResult(
+            messages[-1].content, collect_sources(messages), collect_figures(messages)
+        )
 
     with span("agent-run", as_type="agent", input={"question": question}) as obs:
         result = graph.invoke(payload, build_config(thread_id, trace=True))
-        answer = result["messages"][-1].content
-        sources = collect_sources(result["messages"])
+        messages = result["messages"]
+        answer = messages[-1].content
+        sources = collect_sources(messages)
+        figures = collect_figures(messages)
         if obs:
-            obs.update(output=answer, metadata={"source_count": len(sources)})
+            obs.update(
+                output=answer,
+                metadata={"source_count": len(sources), "figure_count": len(figures)},
+            )
         # Must be read inside the span context — there is no active trace once it exits.
         url = trace_url()
 
-    return answer, sources, url
+    return AgentResult(answer, sources, figures, url)
 
 
 if __name__ == "__main__":
@@ -149,8 +190,12 @@ if __name__ == "__main__":
         if not question:
             continue
 
-        answer, _sources, url = ask_agent(question, thread_id="session-1")
+        result = ask_agent(question, thread_id="session-1")
+        answer, url = result.answer, result.trace_url
         print(f"\n{answer}")
+        if result.figures:
+            pages = ", ".join(str(f["page"]) for f in result.figures)
+            print(f"[matching figure(s) on page {pages}]")
         if url:
             print(f"\ntrace: {url}")
 

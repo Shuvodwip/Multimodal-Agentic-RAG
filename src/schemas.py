@@ -64,12 +64,27 @@ class AskRequest(BaseModel):
         return cleaned
 
 
+class Figure(BaseModel):
+    """A figure matched to the question by image search.
+
+    Only its identity and page are returned — the image itself is not interpreted, and
+    the API does not serve image bytes.
+    """
+
+    id: str = Field(description="Stored figure id, e.g. image_9")
+    page: int = Field(description="Page of the source document the figure appears on")
+
+
 class AskResponse(BaseModel):
     answer: str = Field(description="Answer grounded in the retrieved sources.")
     session_id: str = Field(description="Thread this exchange belongs to; reuse for follow-ups.")
     sources: list[Source] = Field(
         default_factory=list,
         description="Passages retrieved while answering. Empty if no retrieval was needed.",
+    )
+    figures: list[Figure] = Field(
+        default_factory=list,
+        description="Figures matching the question, when the agent searched for one.",
     )
     latency_seconds: float = Field(description="Server-side time to produce the answer.")
     trace_url: str | None = Field(

@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from groq import APIConnectionError, APIStatusError, RateLimitError
 
 from agent import AGENT_MODEL, ask_agent
-from schemas import AskRequest, AskResponse, ErrorResponse, HealthResponse, Source
+from schemas import AskRequest, AskResponse, ErrorResponse, Figure, HealthResponse, Source
 from tracing import TRACING_ENABLED
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -129,15 +129,22 @@ def ask(request: AskRequest) -> AskResponse:
     session_id = request.session_id or f"api-{uuid.uuid4().hex[:12]}"
 
     started = time.perf_counter()
-    answer, passages, trace_url = ask_agent(request.question, thread_id=session_id)
+    result = ask_agent(request.question, thread_id=session_id)
     elapsed = time.perf_counter() - started
 
-    logger.info("answered session=%s in %.2fs with %d sources", session_id, elapsed, len(passages))
+    logger.info(
+        "answered session=%s in %.2fs with %d sources, %d figures",
+        session_id,
+        elapsed,
+        len(result.passages),
+        len(result.figures),
+    )
 
     return AskResponse(
-        answer=answer,
+        answer=result.answer,
         session_id=session_id,
-        sources=[Source.from_passage(p) for p in passages],
+        sources=[Source.from_passage(p) for p in result.passages],
+        figures=[Figure(id=f["id"], page=f["page"]) for f in result.figures],
         latency_seconds=round(elapsed, 3),
-        trace_url=trace_url,
+        trace_url=result.trace_url,
     )

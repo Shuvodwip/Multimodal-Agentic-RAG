@@ -66,7 +66,10 @@ with st.sidebar:
 
             if counts:
                 st.session_state.messages = []
-                st.success(f"Indexed {counts['chunks']} chunks and {counts['tables']} tables.")
+                st.success(
+                    f"Indexed {counts['chunks']} chunks, {counts['tables']} tables "
+                    f"and {counts.get('figures', 0)} figures."
+                )
                 st.rerun()
     else:
         st.caption("Indexing is managed server-side in this mode.")
@@ -90,6 +93,9 @@ st.caption(
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        for fig in message.get("figures", []):
+            if fig.get("path") and Path(fig["path"]).exists():
+                st.image(fig["path"], caption=f"Figure from page {fig['page']}")
         if message.get("sources"):
             with st.expander(f"{len(message['sources'])} sources"):
                 for src in message["sources"]:
@@ -108,12 +114,17 @@ if question := st.chat_input("Ask something about the indexed document…"):
         with st.spinner("Retrieving and reasoning…"):
             try:
                 result = backend.ask(question, session_id=st.session_state.thread_id)
-                answer, passages, trace_url = result.text, result.passages, result.trace_url
+                answer, passages = result.text, result.passages
+                figures, trace_url = result.figures, result.trace_url
             except Exception as exc:  # noqa: BLE001 - surfaced to the user below
-                answer, passages, trace_url = f"Something went wrong: {exc}", [], None
+                answer, passages, figures, trace_url = f"Something went wrong: {exc}", [], [], None
 
         sources = [Source.from_passage(p) for p in passages]
         st.markdown(answer)
+
+        for fig in figures:
+            if fig.get("path") and Path(fig["path"]).exists():
+                st.image(fig["path"], caption=f"Figure from page {fig['page']}")
 
         if sources:
             with st.expander(f"{len(sources)} sources"):
@@ -126,5 +137,11 @@ if question := st.chat_input("Ask something about the indexed document…"):
             st.caption(meta)
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": answer, "sources": sources, "meta": meta}
+        {
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
+            "figures": figures,
+            "meta": meta,
+        }
     )
