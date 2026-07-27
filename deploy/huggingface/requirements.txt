@@ -1,0 +1,30 @@
+# Dependencies for the Hugging Face Space.
+#
+# Separate from the repository's requirements.txt, which is a full development freeze
+# (evaluation stack, test tooling, ~130 packages). Installing that here would pull the
+# CUDA build of torch — gigabytes of GPU libraries a CPU Space can never use — and
+# risks exceeding the build timeout.
+
+# CPU-only torch. Without this index, sentence-transformers resolves the CUDA wheel.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0
+
+streamlit==1.60.0
+
+chromadb==1.5.9
+ddgs==9.14.4
+groq==0.37.1
+langchain==1.3.14
+langchain-core==1.5.1
+langchain-groq==1.1.3
+langchain-text-splitters==1.1.2
+langfuse==4.14.1
+langgraph==1.2.9
+pdfplumber==0.11.10
+pillow==12.3.0
+pydantic==2.13.4
+pymupdf==1.28.0
+python-docx==1.2.0
+python-dotenv==1.2.2
+rank-bm25==0.2.2
+sentence-transformers==5.6.1

@@ -10,3 +10,6 @@ __pycache__/
 # Unpublished paper content — keep private
 data/*
 !data/.gitkeep
+
+# Space build output
+build/
