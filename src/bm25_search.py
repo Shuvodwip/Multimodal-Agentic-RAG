@@ -12,17 +12,36 @@ def tokenize(text: str) -> list[str]:
     return re.findall(r"\w+", text.lower())
 
 
-all_items = text_collection.get(include=["documents", "metadatas"])
-documents = all_items["documents"]
-metadatas = all_items["metadatas"]
-ids = all_items["ids"]
+documents: list[str] = []
+metadatas: list[dict] = []
+ids: list[str] = []
+bm25: BM25Okapi | None = None
 
-# BM25Okapi divides by document count during initialisation, so an empty corpus raises
-# ZeroDivisionError rather than just returning no results. An empty corpus is expected
-# whenever this module is imported before ingestion has run (a fresh checkout, or CI,
-# where the source document is deliberately not committed) — so tolerate it here
-# instead of crashing on import.
-bm25 = BM25Okapi(tokenized_corpus) if (tokenized_corpus := [tokenize(d) for d in documents]) else None
+
+def rebuild_index() -> int:
+    """Load the corpus from ChromaDB and rebuild the BM25 index.
+
+    Called at import, and again whenever the collection changes — ingesting a new
+    document would otherwise leave keyword search answering from the previous one,
+    since the index is an in-memory snapshot rather than a live view.
+    """
+    global documents, metadatas, ids, bm25
+
+    all_items = text_collection.get(include=["documents", "metadatas"])
+    documents = all_items["documents"]
+    metadatas = all_items["metadatas"]
+    ids = all_items["ids"]
+
+    # BM25Okapi divides by document count during initialisation, so an empty corpus
+    # raises ZeroDivisionError rather than returning no results. An empty corpus is
+    # expected before ingestion has run (a fresh checkout, or CI, where the source
+    # document is deliberately not committed) — tolerate it instead of crashing.
+    tokenized_corpus = [tokenize(doc) for doc in documents]
+    bm25 = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
+    return len(documents)
+
+
+rebuild_index()
 
 
 def bm25_search(query: str, top_k: int = 3) -> list[dict]:

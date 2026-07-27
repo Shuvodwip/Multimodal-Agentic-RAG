@@ -21,8 +21,8 @@ from store_chunks import collection
 sys.stdout.reconfigure(encoding="utf-8")
 
 
-def ingest_text() -> int:
-    chunks = splitter.split_text(extract_text(PDF_PATH))
+def ingest_text(pdf_path: str = PDF_PATH) -> int:
+    chunks = splitter.split_text(extract_text(pdf_path))
     embeddings = model.encode(chunks)
 
     collection.upsert(
@@ -30,30 +30,55 @@ def ingest_text() -> int:
         documents=chunks,
         embeddings=embeddings.tolist(),
         metadatas=[
-            {"source": PDF_PATH, "chunk_index": i, "type": "text"} for i in range(len(chunks))
+            {"source": pdf_path, "chunk_index": i, "type": "text"} for i in range(len(chunks))
         ],
     )
     return len(chunks)
 
 
-def ingest_tables() -> int:
-    tables = extract_tables(PDF_PATH)
+def ingest_tables(pdf_path: str = PDF_PATH) -> int:
+    tables = extract_tables(pdf_path)
 
     # Caption first, then the grid: questions resemble a table's description, not its
     # digits, and embedding the grid alone left tables unretrievable (0/15 questions).
     documents = [f"{t['caption']}\n\n{t['markdown']}" for t in tables]
-    embeddings = model.encode(documents)
+    if not documents:
+        return 0
 
+    embeddings = model.encode(documents)
     collection.upsert(
         ids=[f"table_{i}" for i in range(len(tables))],
         documents=documents,
         embeddings=embeddings.tolist(),
         metadatas=[
-            {"source": PDF_PATH, "type": "table", "page": t["page"], "caption": t["caption"]}
+            {"source": pdf_path, "type": "table", "page": t["page"], "caption": t["caption"]}
             for t in tables
         ],
     )
     return len(tables)
+
+
+def replace_document(pdf_path: str) -> dict:
+    """Index a new PDF, discarding whatever was indexed before.
+
+    The store holds one document at a time: ids are positional (chunk_0, table_0), so
+    a shorter new document would otherwise leave stale chunks from the longer old one
+    behind and answerable. Clearing first keeps retrieval honest.
+    """
+    existing = collection.get()["ids"]
+    if existing:
+        collection.delete(ids=existing)
+
+    n_chunks = ingest_text(pdf_path)
+    n_tables = ingest_tables(pdf_path)
+
+    # Keyword search holds an in-memory snapshot; without this it keeps answering
+    # from the previous document.
+    from bm25_search import rebuild_index
+
+    rebuild_index()
+
+    return {"chunks": n_chunks, "tables": n_tables}
 
 
 if __name__ == "__main__":
