@@ -1,6 +1,7 @@
 import sys
 
 from bm25_search import bm25_search
+from rerank import rerank
 from search import search
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -26,13 +27,21 @@ def reciprocal_rank_fusion(vector_results: dict, bm25_results: list[dict], k: in
 
 
 def hybrid_search(query: str, top_k: int = 5, candidate_k: int = 10) -> list[dict]:
+    """Recall a wide candidate set with hybrid search, then rerank for precision.
+
+    RRF fuses by rank position, which makes it robust across scoring scales but also
+    means a single dominant match can be outranked by items that merely placed
+    moderately in both lists. Keeping RRF for recall and letting a cross-encoder choose
+    the final order addresses that without discarding hybrid search's coverage.
+    """
     vector_results = search(query, top_k=candidate_k)
     bm25_results = bm25_search(query, top_k=candidate_k)
 
     scores, docs = reciprocal_rank_fusion(vector_results, bm25_results)
-    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    return [{"id": doc_id, "rrf_score": score, **docs[doc_id]} for doc_id, score in ranked]
+    candidates = [{"id": doc_id, "rrf_score": score, **docs[doc_id]} for doc_id, score in ranked]
+    return rerank(query, candidates, top_k=top_k)
 
 
 if __name__ == "__main__":

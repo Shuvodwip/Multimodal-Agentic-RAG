@@ -6,6 +6,7 @@ from ddgs import DDGS
 from langchain_core.tools import tool
 
 from hybrid_search import hybrid_search
+from rerank import RERANK_ENABLED
 from tracing import span
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -21,13 +22,26 @@ def retrieve_documents(query: str) -> str:
         if obs:
             # Record which sources were retrieved and how they ranked, so a bad answer
             # can be traced back to whether retrieval or generation was at fault.
+            # Both scores are kept: rrf_score is why a chunk was a candidate,
+            # rerank_score is why it survived into the final context.
             obs.update(
                 output={
                     "retrieved": [
-                        {"id": r["id"], "rrf_score": round(r["rrf_score"], 4)} for r in results
+                        {
+                            "id": r["id"],
+                            "rrf_score": round(r["rrf_score"], 4),
+                            "rerank_score": (
+                                round(r["rerank_score"], 3) if "rerank_score" in r else None
+                            ),
+                        }
+                        for r in results
                     ]
                 },
-                metadata={"top_k": 3, "strategy": "reciprocal-rank-fusion(vector+bm25)"},
+                metadata={
+                    "top_k": 3,
+                    "strategy": "rrf(vector+bm25) -> cross-encoder rerank",
+                    "reranked": RERANK_ENABLED,
+                },
             )
         return output
 
