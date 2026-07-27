@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import api  # noqa: E402
 from agent import AgentResult  # noqa: E402
 from api import app  # noqa: E402
+from schemas import Source  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -49,12 +50,18 @@ def test_health_reports_model():
 def test_ask_returns_answer_and_typed_sources():
     body = client.post("/ask", json={"question": "What is the mAP?"}).json()
     assert body["answer"] == "0.9195"
-    assert body["sources"][0] == {
-        "id": "chunk_38",
-        "type": "text",
-        "preview": "The proposed model reaches an mAP of 0.9195.",
-    }
+    source = body["sources"][0]
+    assert source["id"] == "chunk_38"
+    assert source["type"] == "text"
+    assert source["preview"] == "The proposed model reaches an mAP of 0.9195."
     assert body["latency_seconds"] >= 0
+
+
+def test_namespaced_source_ids_are_parsed():
+    """Ids carry a per-document prefix once several documents are indexed."""
+    parsed = Source.from_passage("[a1b2c3d4__table_2]\nQuarterly totals by region.")
+    assert parsed.id == "a1b2c3d4__table_2"
+    assert parsed.type == "table"
 
 
 def test_ask_returns_figures_when_the_agent_found_them(monkeypatch):

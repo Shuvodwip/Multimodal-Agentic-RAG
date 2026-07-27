@@ -6,6 +6,7 @@ import sys
 from ddgs import DDGS
 from langchain_core.tools import tool
 
+from docids import parse_id
 from hybrid_search import hybrid_search
 from images import search_images
 from rerank import RERANK_ENABLED
@@ -108,32 +109,38 @@ def document_overview() -> str:
         if not items["ids"]:
             return "No document is currently indexed."
 
-        # Restore reading order: ids are positional but come back unsorted.
-        def position(doc_id: str) -> tuple[int, int]:
-            kind, _, number = doc_id.rpartition("_")
-            return (0 if kind == "chunk" else 1, int(number) if number.isdigit() else 0)
+        # Group by document, then restore reading order within each: ids carry the
+        # position but come back unsorted.
+        by_document: dict[str, list[tuple[int, str, str]]] = {}
+        for doc_id, text, meta in zip(items["ids"], items["documents"], items["metadatas"]):
+            _key, kind, index = parse_id(doc_id)
+            if kind != "chunk":
+                continue
+            name = meta.get("document") or os.path.basename(meta.get("source", "unknown"))
+            by_document.setdefault(name, []).append((index, doc_id, text))
 
-        ordered = sorted(zip(items["ids"], items["documents"]), key=lambda p: position(p[0]))
-        opening = [p for p in ordered if p[0].startswith("chunk_")][:OVERVIEW_CHUNKS]
+        if not by_document:
+            return "The indexed content has no readable text passages."
 
-        source = ""
-        for meta in items["metadatas"]:
-            if meta.get("source"):
-                source = os.path.basename(meta["source"])
-                break
+        sections = []
+        returned = []
+        for name, entries in sorted(by_document.items()):
+            opening = sorted(entries)[:OVERVIEW_CHUNKS]
+            returned.extend(doc_id for _, doc_id, _ in opening)
+            body = "\n\n".join(f"[{doc_id}]\n{text}" for _, doc_id, text in opening)
+            sections.append(f"--- Start of {name} ---\n{body}")
 
         header = (
-            f"Document: {source or 'unknown'} — {len(items['ids'])} indexed passages.\n"
-            "Opening of the document:\n\n"
+            f"{len(by_document)} document(s) indexed "
+            f"({', '.join(sorted(by_document))}), {len(items['ids'])} passages total.\n\n"
         )
-        body = "\n\n".join(f"[{doc_id}]\n{text}" for doc_id, text in opening)
 
         if obs:
             obs.update(
-                output={"returned": [doc_id for doc_id, _ in opening], "source": source},
-                metadata={"strategy": "positional (document start)"},
+                output={"returned": returned, "documents": sorted(by_document)},
+                metadata={"strategy": "positional (start of each document)"},
             )
-        return header + body
+        return header + "\n\n".join(sections)
 
 
 def read_best_figure(hit: dict, query: str) -> str:

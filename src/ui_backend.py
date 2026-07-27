@@ -33,11 +33,13 @@ class InProcessBackend:
 
     def __init__(self):
         from agent import AGENT_MODEL, ask_agent
-        from ingest import replace_document
+        from ingest import add_document, clear_all, indexed_documents
         from store_chunks import collection
 
         self._ask = ask_agent
-        self._replace_document = replace_document
+        self._add_document = add_document
+        self._clear_all = clear_all
+        self._indexed_documents = indexed_documents
         self.collection = collection
         self.model = AGENT_MODEL
 
@@ -45,16 +47,14 @@ class InProcessBackend:
         result = self._ask(question, thread_id=session_id)
         return Answer(result.answer, result.passages, result.figures, result.trace_url)
 
-    def replace_document(self, pdf_path: str) -> dict:
-        return self._replace_document(pdf_path)
+    def add_document(self, path: str) -> dict:
+        return self._add_document(path)
 
-    def describe_corpus(self) -> tuple[int, str | None]:
-        count = self.collection.count()
-        if not count:
-            return 0, None
-        sample = self.collection.get(limit=1, include=["metadatas"])
-        metadatas = sample["metadatas"]
-        return count, metadatas[0].get("source") if metadatas else None
+    def clear_all(self) -> None:
+        self._clear_all()
+
+    def documents(self) -> list[dict]:
+        return self._indexed_documents()
 
 
 class HttpBackend:
@@ -95,12 +95,15 @@ class HttpBackend:
         passages = [f"[{s['id']}]\n{s['preview']}" for s in payload.get("sources", [])]
         return Answer(payload["answer"], passages, [], payload.get("trace_url"))
 
-    def replace_document(self, pdf_path: str) -> dict:
+    def add_document(self, path: str) -> dict:
         raise NotImplementedError("Document upload is unavailable when using the HTTP backend.")
 
-    def describe_corpus(self) -> tuple[int, str | None]:
+    def clear_all(self) -> None:
+        raise NotImplementedError("Document management is unavailable over HTTP.")
+
+    def documents(self) -> list[dict]:
         # The API deliberately exposes no corpus-inspection endpoint.
-        return -1, None
+        return []
 
 
 def build_backend():

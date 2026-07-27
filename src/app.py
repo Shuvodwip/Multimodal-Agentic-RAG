@@ -39,46 +39,59 @@ if "messages" not in st.session_state:
 
 
 with st.sidebar:
-    st.subheader("Document")
-
-    indexed, source = backend.describe_corpus()
-    if indexed > 0:
-        st.caption(f"{indexed} passages indexed from `{Path(source).name}`")
-    elif indexed == 0:
-        st.warning("Nothing indexed yet — upload a PDF to begin.")
-    else:
-        st.caption("Corpus served by the API.")
+    st.subheader("Documents")
 
     if backend.supports_upload:
-        upload = st.file_uploader(
-            "Replace with another document",
-            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
-            help="PDF, Word, plain text, or an image. Indexing replaces the current document.",
-        )
-        if upload and st.button("Index this document", use_container_width=True):
-            counts = None
-            with st.spinner("Extracting, chunking and embedding…"):
-                # Preserve the extension: the loader dispatches on it.
-                ext = Path(upload.name).suffix or ".pdf"
-                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-                    tmp.write(upload.getbuffer())
-                    tmp_path = tmp.name
-                try:
-                    counts = backend.replace_document(tmp_path)
-                except Exception as exc:  # noqa: BLE001 - shown to the user below
-                    st.error(str(exc))
-                finally:
-                    Path(tmp_path).unlink(missing_ok=True)
+        docs = backend.documents()
+        if docs:
+            for doc in docs:
+                st.caption(f"`{doc['name']}` — {doc['passages']} passages")
+        else:
+            st.warning("Nothing indexed yet — upload a file to begin.")
 
-            if counts:
+        uploads = st.file_uploader(
+            "Add documents",
+            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            help="PDF, Word, plain text, or images. Questions are answered across everything indexed.",
+        )
+        if uploads and st.button("Index these files", use_container_width=True):
+            added, failed = [], []
+            for upload in uploads:
+                with st.spinner(f"Indexing {upload.name}…"):
+                    # Preserve the extension: the loader dispatches on it.
+                    ext = Path(upload.name).suffix or ".pdf"
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                        tmp.write(upload.getbuffer())
+                        tmp_path = tmp.name
+                    # Rename so the stored document key derives from the real filename
+                    # rather than the temporary one.
+                    named = Path(tmp_path).with_name(upload.name)
+                    try:
+                        Path(tmp_path).replace(named)
+                        counts = backend.add_document(str(named))
+                        added.append(f"{upload.name}: {counts['chunks']} chunks, "
+                                     f"{counts['tables']} tables, {counts['figures']} figures")
+                    except Exception as exc:  # noqa: BLE001 - shown to the user below
+                        failed.append(f"{upload.name}: {exc}")
+                    finally:
+                        named.unlink(missing_ok=True)
+                        Path(tmp_path).unlink(missing_ok=True)
+
+            for line in added:
+                st.success(line)
+            for line in failed:
+                st.error(line)
+            if added:
                 st.session_state.messages = []
-                st.success(
-                    f"Indexed {counts['chunks']} chunks, {counts['tables']} tables "
-                    f"and {counts.get('figures', 0)} figures."
-                )
                 st.rerun()
+
+        if docs and st.button("Clear all documents", use_container_width=True):
+            backend.clear_all()
+            st.session_state.messages = []
+            st.rerun()
     else:
-        st.caption("Indexing is managed server-side in this mode.")
+        st.caption("Documents are managed server-side in this mode.")
 
     st.divider()
     st.caption(f"Backend: `{backend.name}`")

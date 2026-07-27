@@ -8,20 +8,25 @@ import re
 
 from pydantic import BaseModel, Field, field_validator
 
-SOURCE_ID_PATTERN = re.compile(r"^\[((?:chunk|table)_\d+)\]\s*(.*)", re.DOTALL)
+SOURCE_ID_PATTERN = re.compile(
+    r"^\[((?:[0-9a-f]{8}__)?(?:chunk|table)_\d+)\]\s*(.*)", re.DOTALL
+)
 SESSION_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 
 
 class Source(BaseModel):
     """A passage the retriever returned, so an answer can be traced to its evidence."""
 
-    id: str = Field(description="Stored document id, e.g. chunk_40 or table_0")
+    id: str = Field(description="Stored passage id, e.g. a1b2c3d4__chunk_40")
     type: str = Field(description="Whether the passage came from prose or a table")
     preview: str = Field(description="Opening text of the passage")
+    document: str | None = Field(
+        default=None, description="File the passage came from, when several are indexed"
+    )
 
     @classmethod
     def from_passage(cls, passage: str, preview_chars: int = 240) -> "Source":
-        """Parse one '[chunk_40]\\n<text>' block emitted by the retriever tool."""
+        """Parse one '[a1b2c3d4__chunk_40]\\n<text>' block emitted by the retriever tool."""
         match = SOURCE_ID_PATTERN.match(passage.strip())
         if match:
             doc_id, body = match.group(1), match.group(2)
@@ -32,7 +37,7 @@ class Source(BaseModel):
         preview = body[:preview_chars] + ("…" if len(body) > preview_chars else "")
         return cls(
             id=doc_id,
-            type="table" if doc_id.startswith("table_") else "text",
+            type="table" if "table_" in doc_id else "text",
             preview=preview,
         )
 

@@ -110,7 +110,7 @@ def build_config(thread_id: str, trace: bool = True) -> dict:
 
 def split_tool_output(text: str) -> list[str]:
     """Split the retriever tool's joined output back into individual source passages."""
-    parts = re.split(r"\n\n(?=\[(?:chunk|table)_\d+\])", text.strip())
+    parts = re.split(r"\n\n(?=\[(?:[0-9a-f]{8}__)?(?:chunk|table)_\d+\])", text.strip())
     return [p for p in parts if p]
 
 

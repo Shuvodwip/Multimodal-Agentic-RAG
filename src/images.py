@@ -17,6 +17,8 @@ import sys
 
 import chromadb
 
+from docids import document_key, make_id
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 # Kept inside the vector-store directory so figures persist with the index they belong
@@ -44,28 +46,42 @@ def page_from_filename(path: str) -> int:
     return int(match.group(1)) if match else -1
 
 
-def ingest_images(path: str) -> int:
-    """Index a document's figures for text-to-image search.
+def remove_document_images(doc_key: str) -> int:
+    """Drop one document's figures, leaving other documents' figures in place."""
+    stale = [i for i in collection.get()["ids"] if i.startswith(f"{doc_key}__")]
+    if stale:
+        collection.delete(ids=stale)
+    shutil.rmtree(os.path.join(IMAGE_STORE_DIR, doc_key), ignore_errors=True)
+    return len(stale)
 
-    Figures come from wherever the file type provides them: embedded images in a PDF,
-    or the file itself when the upload *is* an image.
-    """
-    from PIL import Image
 
-    from loaders import load_images
-
-    # Clear previous figures: ids are positional, so a document with fewer images would
-    # otherwise leave the old document's figures searchable.
+def clear_images() -> None:
     existing = collection.get()["ids"]
     if existing:
         collection.delete(ids=existing)
     shutil.rmtree(IMAGE_STORE_DIR, ignore_errors=True)
 
-    saved = load_images(path, IMAGE_STORE_DIR)
+
+def ingest_images(path: str) -> int:
+    """Index a document's figures for text-to-image search.
+
+    Figures come from wherever the file type provides them: embedded images in a PDF,
+    or the file itself when the upload *is* an image. Each document's figures live in
+    their own directory and id namespace so several documents can coexist.
+    """
+    from PIL import Image
+
+    from loaders import load_images
+
+    key = document_key(path)
+    remove_document_images(key)
+
+    document_dir = os.path.join(IMAGE_STORE_DIR, key)
+    saved = load_images(path, document_dir)
     if not saved:
         return 0
 
-    paths = sorted(glob.glob(f"{IMAGE_STORE_DIR}/*"))
+    paths = sorted(glob.glob(f"{document_dir}/*"))
     if not paths:
         return 0
 
@@ -73,11 +89,17 @@ def ingest_images(path: str) -> int:
     embeddings = get_clip().encode(images)
 
     collection.upsert(
-        ids=[f"image_{i}" for i in range(len(paths))],
+        ids=[make_id(key, "image", i) for i in range(len(paths))],
         documents=paths,
         embeddings=[e.tolist() for e in embeddings],
         metadatas=[
-            {"path": p, "page": page_from_filename(p), "type": "image"} for p in paths
+            {
+                "path": p,
+                "page": page_from_filename(p),
+                "type": "image",
+                "document": os.path.basename(path),
+            }
+            for p in paths
         ],
     )
     return len(paths)

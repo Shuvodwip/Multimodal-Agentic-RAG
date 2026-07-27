@@ -14,6 +14,7 @@ import os
 import sys
 
 from chunk_text import splitter
+from docids import document_key, make_id
 from embed_chunks import model
 from extract_text import DEFAULT_DOCUMENT
 from loaders import UnsupportedFileError, check_supported, is_image, load_tables, load_text
@@ -34,20 +35,26 @@ class NoExtractableTextError(RuntimeError):
     """Raised when a document yields too little text to index."""
 
 
+def base_metadata(path: str) -> dict:
+    return {"source": path, "document": os.path.basename(path)}
+
+
 def ingest_text(path: str = DEFAULT_DOCUMENT) -> int:
     text = load_text(path)
     if not text.strip():
         return 0
 
+    key = document_key(path)
     chunks = splitter.split_text(text)
     embeddings = model.encode(chunks)
 
     collection.upsert(
-        ids=[f"chunk_{i}" for i in range(len(chunks))],
+        ids=[make_id(key, "chunk", i) for i in range(len(chunks))],
         documents=chunks,
         embeddings=embeddings.tolist(),
         metadatas=[
-            {"source": path, "chunk_index": i, "type": "text"} for i in range(len(chunks))
+            {**base_metadata(path), "chunk_index": i, "type": "text"}
+            for i in range(len(chunks))
         ],
     )
     return len(chunks)
@@ -62,13 +69,14 @@ def ingest_tables(path: str = DEFAULT_DOCUMENT) -> int:
     if not documents:
         return 0
 
+    key = document_key(path)
     embeddings = model.encode(documents)
     collection.upsert(
-        ids=[f"table_{i}" for i in range(len(tables))],
+        ids=[make_id(key, "table", i) for i in range(len(tables))],
         documents=documents,
         embeddings=embeddings.tolist(),
         metadatas=[
-            {"source": path, "type": "table", "page": t["page"], "caption": t["caption"]}
+            {**base_metadata(path), "type": "table", "page": t["page"], "caption": t["caption"]}
             for t in tables
         ],
     )
@@ -103,20 +111,61 @@ def index_image_description(path: str) -> int:
     description = description[:MAX_DESCRIPTION_CHARS]
     text = f"Description of the uploaded image {os.path.basename(path)}:\n{description}"
     collection.upsert(
-        ids=["chunk_0"],
+        ids=[make_id(document_key(path), "chunk", 0)],
         documents=[text],
         embeddings=model.encode([text]).tolist(),
-        metadatas=[{"source": path, "chunk_index": 0, "type": "text"}],
+        metadatas=[{**base_metadata(path), "chunk_index": 0, "type": "text"}],
     )
     return 1
 
 
-def replace_document(path: str) -> dict:
-    """Index a new document, discarding whatever was indexed before.
+def indexed_documents() -> list[dict]:
+    """Documents currently in the store, with how many passages each contributed."""
+    items = collection.get(include=["metadatas"])
+    counts: dict[str, int] = {}
+    for meta in items["metadatas"]:
+        name = meta.get("document") or os.path.basename(meta.get("source", "unknown"))
+        counts[name] = counts.get(name, 0) + 1
+    return [{"name": name, "passages": n} for name, n in sorted(counts.items())]
 
-    The store holds one document at a time: ids are positional (chunk_0, table_0), so
-    a shorter new document would otherwise leave stale chunks from the longer old one
-    behind and answerable. Clearing first keeps retrieval honest.
+
+def remove_document(path_or_name: str) -> int:
+    """Drop every passage and figure belonging to one document."""
+    from images import remove_document_images
+
+    key = document_key(path_or_name)
+    stale = [i for i in collection.get()["ids"] if i.startswith(f"{key}__")]
+    if stale:
+        collection.delete(ids=stale)
+
+    removed_figures = remove_document_images(key)
+
+    from bm25_search import rebuild_index
+
+    rebuild_index()
+    return len(stale) + removed_figures
+
+
+def clear_all() -> None:
+    """Empty the store completely."""
+    from images import clear_images
+
+    existing = collection.get()["ids"]
+    if existing:
+        collection.delete(ids=existing)
+    clear_images()
+
+    from bm25_search import rebuild_index
+
+    rebuild_index()
+
+
+def add_document(path: str) -> dict:
+    """Index a document alongside whatever is already stored.
+
+    Ids are namespaced per document, so several can coexist and be searched together.
+    Re-adding the same filename replaces that document's passages rather than
+    duplicating them, since the key is derived from the name.
     """
     check_supported(path)
 
@@ -128,9 +177,12 @@ def replace_document(path: str) -> dict:
                 "pages, which text extraction cannot read. It needs OCR first."
             )
 
-    existing = collection.get()["ids"]
-    if existing:
-        collection.delete(ids=existing)
+    # Clear this document's previous passages so a shorter re-upload cannot leave
+    # stale trailing chunks behind; other documents are untouched.
+    key = document_key(path)
+    stale = [i for i in collection.get()["ids"] if i.startswith(f"{key}__")]
+    if stale:
+        collection.delete(ids=stale)
 
     # Figures are searchable by description, so a question about a chart can surface
     # the chart itself as evidence.
@@ -144,13 +196,19 @@ def replace_document(path: str) -> dict:
         n_chunks = ingest_text(path)
         n_tables = ingest_tables(path)
 
-    # Keyword search holds an in-memory snapshot; without this it keeps answering
-    # from the previous document.
+    # Keyword search holds an in-memory snapshot; without this the new document is
+    # invisible to keyword search until restart.
     from bm25_search import rebuild_index
 
     rebuild_index()
 
     return {"chunks": n_chunks, "tables": n_tables, "figures": n_figures}
+
+
+def replace_document(path: str) -> dict:
+    """Index a document as the only one in the store."""
+    clear_all()
+    return add_document(path)
 
 
 if __name__ == "__main__":
