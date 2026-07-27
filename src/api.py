@@ -33,8 +33,9 @@ RETRY_HINT = re.compile(r"try again in (?:(\d+)m)?([\d.]+)s")
 app = FastAPI(
     title="Agentic Multimodal RAG",
     description=(
-        "Ask questions about an indexed research paper. Answers are grounded in "
-        "retrieved passages and tables, and every response carries its sources."
+        "Ask questions about an indexed document — a report, paper, manual, contract "
+        "or similar. Answers are grounded in retrieved passages, tables and figures, "
+        "and every response carries its sources."
     ),
     version="0.3.0",
     responses={

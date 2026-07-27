@@ -25,8 +25,8 @@ OUTPUT_PATH = "data/eval_agent_results.csv"
 
 def run_agent(question: str, thread_id: str) -> tuple[str, list[str]]:
     """Evaluation entry point — delegates to the same traced call path the API uses."""
-    answer, contexts, _trace_url = ask_agent(question, thread_id=thread_id)
-    return answer, contexts
+    result = ask_agent(question, thread_id=thread_id)
+    return result.answer, result.passages
 
 
 def load_cache() -> dict:

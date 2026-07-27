@@ -1,6 +1,16 @@
+import os
+
 import fitz  # PyMuPDF
 
-PDF_PATH = "data/A Dual-Stream Multimodal Framework for Tomato Disease Detection in Unstructured Field Environments.pdf"
+# Only a convenience default for `python src/ingest.py` with no argument; uploads and
+# the compose ingest service pass an explicit path. Override with DEFAULT_DOCUMENT.
+DEFAULT_DOCUMENT = os.getenv(
+    "DEFAULT_DOCUMENT",
+    "data/A Dual-Stream Multimodal Framework for Tomato Disease Detection in Unstructured Field Environments.pdf",
+)
+
+# Retained under the old name so existing imports keep working.
+PDF_PATH = DEFAULT_DOCUMENT
 
 
 def extract_text(pdf_path: str) -> str:

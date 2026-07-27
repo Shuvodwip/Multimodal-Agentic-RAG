@@ -5,7 +5,7 @@ from extract_tables import extract_tables
 from extract_text import PDF_PATH
 
 client = chromadb.PersistentClient(path=".chroma")
-collection = client.get_or_create_collection("paper_chunks")
+collection = client.get_or_create_collection("document_chunks")
 
 if __name__ == "__main__":
     tables = extract_tables(PDF_PATH)
@@ -30,4 +30,4 @@ if __name__ == "__main__":
     print(f"Tables stored: {len(tables)}")
     for i, t in enumerate(tables):
         print(f"  table_{i}: {t['caption'][:90]}")
-    print(f"Total items in paper_chunks collection: {collection.count()}")
+    print(f"Total items in document_chunks collection: {collection.count()}")

@@ -25,7 +25,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 IMAGE_STORE_DIR = os.getenv("IMAGE_STORE_DIR", ".chroma/images")
 
 client = chromadb.PersistentClient(path=".chroma")
-collection = client.get_or_create_collection("paper_images")
+collection = client.get_or_create_collection("document_images")
 
 _clip = None
 
@@ -44,11 +44,15 @@ def page_from_filename(path: str) -> int:
     return int(match.group(1)) if match else -1
 
 
-def ingest_images(pdf_path: str) -> int:
-    """Extract every embedded figure from the PDF and index it for text-to-image search."""
+def ingest_images(path: str) -> int:
+    """Index a document's figures for text-to-image search.
+
+    Figures come from wherever the file type provides them: embedded images in a PDF,
+    or the file itself when the upload *is* an image.
+    """
     from PIL import Image
 
-    from extract_images import extract_images
+    from loaders import load_images
 
     # Clear previous figures: ids are positional, so a document with fewer images would
     # otherwise leave the old document's figures searchable.
@@ -57,7 +61,7 @@ def ingest_images(pdf_path: str) -> int:
         collection.delete(ids=existing)
     shutil.rmtree(IMAGE_STORE_DIR, ignore_errors=True)
 
-    saved = extract_images(pdf_path, IMAGE_STORE_DIR)
+    saved = load_images(path, IMAGE_STORE_DIR)
     if not saved:
         return 0
 

@@ -5,7 +5,7 @@ from embed_chunks import model
 from extract_text import PDF_PATH, extract_text
 
 client = chromadb.PersistentClient(path=".chroma")
-collection = client.get_or_create_collection("paper_chunks")
+collection = client.get_or_create_collection("document_chunks")
 
 if __name__ == "__main__":
     full_text = extract_text(PDF_PATH)

@@ -50,11 +50,17 @@ with st.sidebar:
         st.caption("Corpus served by the API.")
 
     if backend.supports_upload:
-        upload = st.file_uploader("Replace with another PDF", type="pdf")
+        upload = st.file_uploader(
+            "Replace with another document",
+            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
+            help="PDF, Word, plain text, or an image. Indexing replaces the current document.",
+        )
         if upload and st.button("Index this document", use_container_width=True):
             counts = None
             with st.spinner("Extracting, chunking and embedding…"):
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                # Preserve the extension: the loader dispatches on it.
+                ext = Path(upload.name).suffix or ".pdf"
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(upload.getbuffer())
                     tmp_path = tmp.name
                 try:

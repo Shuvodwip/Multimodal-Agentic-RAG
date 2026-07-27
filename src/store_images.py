@@ -6,7 +6,7 @@ import chromadb
 from embed_images import IMAGES_DIR, embed_images
 
 client = chromadb.PersistentClient(path=".chroma")
-collection = client.get_or_create_collection("paper_images")
+collection = client.get_or_create_collection("document_images")
 
 
 def page_from_filename(path: str) -> int:
