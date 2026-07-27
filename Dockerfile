@@ -8,19 +8,27 @@ ENV PIP_NO_CACHE_DIR=1 \
 
 WORKDIR /build
 
-# Install CPU-only torch first. The default wheel pulls ~2GB of CUDA libraries that a
-# CPU container can never use, so pinning the CPU index is the single biggest size win.
-RUN pip install --prefix=/install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# Install into a venv rather than --prefix. With --prefix, pip cannot tell that a
+# package is already present, so the later requirements install silently pulled the
+# CUDA build of torch on top of the CPU one — 2.7GB of unusable nvidia libraries.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# CPU-only torch: the default wheel bundles CUDA libraries a CPU container can never
+# use. Installing it first means sentence-transformers finds its dependency satisfied.
+RUN pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements-api.txt .
-RUN pip install --prefix=/install -r requirements-api.txt
+RUN pip install -r requirements-api.txt \
+    && python -c "import torch; assert not torch.version.cuda, 'CUDA torch leaked into the image'"
 
 
 FROM python:3.13-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    HF_HOME=/home/app/.cache/huggingface
+    HF_HOME=/home/app/.cache/huggingface \
+    PATH="/opt/venv/bin:$PATH"
 
 # curl is needed for the container healthcheck below.
 RUN apt-get update \
@@ -29,7 +37,7 @@ RUN apt-get update \
 
 RUN useradd --create-home --uid 1000 app
 
-COPY --from=builder /install /usr/local
+COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 COPY --chown=app:app src/ ./src/

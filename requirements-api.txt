@@ -11,6 +11,10 @@ chromadb==1.5.9
 ddgs==9.14.4
 fastapi==0.140.0
 groq==0.37.1
+# langfuse's LangChain callback handler imports the full `langchain` package at
+# runtime, not just langchain-core — a lazy import that static analysis of our own
+# source does not reveal. Omitting it breaks tracing inside the container only.
+langchain==1.3.14
 langchain-core==1.5.1
 langchain-groq==1.1.3
 langchain-text-splitters==1.1.2
