@@ -11,6 +11,7 @@ from images import search_images
 from rerank import RERANK_ENABLED
 from store_chunks import collection
 from tracing import span
+from vision import VISION_ENABLED, VISION_MODEL, describe_image
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -135,13 +136,44 @@ def document_overview() -> str:
         return header + body
 
 
+def read_best_figure(hit: dict, query: str) -> str:
+    """Describe the top-matching figure, degrading to retrieval-only on any failure.
+
+    A vision error must not fail the whole answer: the figure has still been found and
+    shown, so the agent can fall back on caption text.
+    """
+    if not VISION_ENABLED:
+        return (
+            "Figure contents were not read (vision is disabled). Use retrieve_documents "
+            "for the caption text."
+        )
+
+    path = hit.get("path")
+    if not path or not os.path.exists(path):
+        return "The figure file is unavailable, so its contents could not be read."
+
+    with span("describe_figure", as_type="generation", input={"query": query}) as obs:
+        try:
+            description = describe_image(path, f"Question about this figure: {query}")
+            if obs:
+                obs.update(output=description, metadata={"model": VISION_MODEL})
+            return f"Description of the figure on page {hit['page']}:\n{description}"
+        except Exception as exc:  # noqa: BLE001 - degraded, not fatal
+            if obs:
+                obs.update(level="WARNING", status_message=str(exc)[:200])
+            return (
+                f"The figure on page {hit['page']} could not be read ({type(exc).__name__}). "
+                "Use retrieve_documents for its caption instead."
+            )
+
+
 @tool
 def find_figures(query: str) -> str:
-    """Find figures, charts, or images in the document that match a visual description.
+    """Look at figures, charts, or images in the document and describe what they show.
 
-    Use for questions about what a figure shows or where a chart is. This locates the
-    figure and displays it to the user; it does not read the contents of the image, so
-    describe what was found and rely on retrieve_documents for any caption text.
+    Use for any question about a figure's contents, trends, or appearance — this reads
+    the image with a vision model, so it can report what a chart actually depicts. The
+    matching figures are also displayed to the user beneath the answer.
     """
     with span("find_figures", as_type="retriever", input={"query": query}) as obs:
         hits = search_images(query, top_k=2)
@@ -156,17 +188,26 @@ def find_figures(query: str) -> str:
         # it in the tool output means figures are recovered from *this* turn's messages
         # rather than by re-running the search.
         ids = ",".join(h["id"] for h in hits)
+
+        # Only the best match is read: vision tokens are the scarcest resource here,
+        # and the second hit is usually a near-duplicate or a weaker match.
+        description = read_best_figure(hits[0], query)
+
         result = (
-            f"Displayed {len(hits)} matching figure(s) to the user, from {pages}. "
-            "The images are now visible below your answer, so tell the user they are "
-            "shown and say which page each came from. Their visual contents cannot be "
-            "read here — use retrieve_documents if you need the caption text. "
-            f"[figures: {ids}]"
+            f"Found {len(hits)} matching figure(s), from {pages}; they are displayed to "
+            f"the user beneath your answer.\n\n{description}\n\n"
+            "This description came from a model that examined the image directly, so "
+            "relay its conclusion — do not re-derive it or reinterpret the numbers "
+            f"yourself. Mention which page the figure came from. [figures: {ids}]"
         )
         if obs:
             obs.update(
                 output={"figures": [{"id": h["id"], "page": h["page"]} for h in hits]},
-                metadata={"strategy": "clip text-to-image", "top_k": 2},
+                metadata={
+                    "strategy": "clip text-to-image + vision description",
+                    "top_k": 2,
+                    "vision_model": VISION_MODEL or "disabled",
+                },
             )
         return result
 
