@@ -13,3 +13,6 @@ data/*
 
 # Space build output
 build/
+
+# Local clone of the Hugging Face Space repo
+space-repo/
