@@ -17,11 +17,17 @@ documents = all_items["documents"]
 metadatas = all_items["metadatas"]
 ids = all_items["ids"]
 
-tokenized_corpus = [tokenize(doc) for doc in documents]
-bm25 = BM25Okapi(tokenized_corpus)
+# BM25Okapi divides by document count during initialisation, so an empty corpus raises
+# ZeroDivisionError rather than just returning no results. An empty corpus is expected
+# whenever this module is imported before ingestion has run (a fresh checkout, or CI,
+# where the source document is deliberately not committed) — so tolerate it here
+# instead of crashing on import.
+bm25 = BM25Okapi(tokenized_corpus) if (tokenized_corpus := [tokenize(d) for d in documents]) else None
 
 
 def bm25_search(query: str, top_k: int = 3) -> list[dict]:
+    if bm25 is None:
+        return []
     scores = bm25.get_scores(tokenize(query))
     ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
     return [
