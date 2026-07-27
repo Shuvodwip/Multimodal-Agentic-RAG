@@ -2,12 +2,10 @@ import os
 
 import fitz  # PyMuPDF
 
-# Only a convenience default for `python src/ingest.py` with no argument; uploads and
-# the compose ingest service pass an explicit path. Override with DEFAULT_DOCUMENT.
-DEFAULT_DOCUMENT = os.getenv(
-    "DEFAULT_DOCUMENT",
-    "data/A Dual-Stream Multimodal Framework for Tomato Disease Detection in Unstructured Field Environments.pdf",
-)
+# Empty by default: the store starts with nothing indexed and the user uploads their
+# own files. Set DEFAULT_DOCUMENT to a path to seed one automatically instead — useful
+# for a demo, but never desirable for shipping someone else's document.
+DEFAULT_DOCUMENT = os.getenv("DEFAULT_DOCUMENT", "")
 
 # Retained under the old name so existing imports keep working.
 PDF_PATH = DEFAULT_DOCUMENT

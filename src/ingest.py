@@ -213,9 +213,17 @@ def replace_document(path: str) -> dict:
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCUMENT
+
+    if not target:
+        # Exit cleanly rather than failing: the compose ingest service runs this on
+        # every start, and an empty store is a valid state — the user uploads their own.
+        print("No document to ingest. Pass a path, or set DEFAULT_DOCUMENT to seed one.")
+        print(f"Collection currently holds {collection.count()} documents.")
+        sys.exit(0)
+
     print(f"Ingesting {target}")
     try:
-        counts = replace_document(target)
+        counts = add_document(target)
     except (UnsupportedFileError, NoExtractableTextError) as exc:
         print(f"  {exc}")
         sys.exit(1)
