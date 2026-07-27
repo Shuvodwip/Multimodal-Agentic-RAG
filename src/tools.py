@@ -13,7 +13,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 @tool
 def retrieve_documents(query: str) -> str:
-    """Retrieve relevant passages and tables from the research paper for a given query."""
+    """Retrieve relevant passages and tables from the indexed document for a given query."""
     with span("hybrid_search", as_type="retriever", input={"query": query}) as obs:
         results = hybrid_search(query, top_k=3)
         output = "\n\n".join(f"[{r['id']}]\n{r['document']}" for r in results)
@@ -59,7 +59,7 @@ def safe_eval(expression: str) -> float:
 
 @tool
 def calculator(expression: str) -> str:
-    """Evaluate a basic arithmetic expression, e.g. '85.29 - 61.76' or '(7.29 / 100) * 14931'."""
+    """Evaluate a basic arithmetic expression, e.g. '128.4 - 96.7' or '(12 / 100) * 4500'."""
     with span("calculator", as_type="tool", input={"expression": expression}) as obs:
         try:
             result = str(safe_eval(expression))
@@ -75,7 +75,7 @@ def calculator(expression: str) -> str:
 
 @tool
 def web_search(query: str) -> str:
-    """Search the web for current information not found in the research paper."""
+    """Search the web for background or current information not present in the indexed document."""
     with span("web_search", as_type="tool", input={"query": query}) as obs:
         results = DDGS().text(query, max_results=3)
         if not results:

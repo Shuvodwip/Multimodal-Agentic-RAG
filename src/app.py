@@ -52,18 +52,22 @@ with st.sidebar:
     if backend.supports_upload:
         upload = st.file_uploader("Replace with another PDF", type="pdf")
         if upload and st.button("Index this document", use_container_width=True):
+            counts = None
             with st.spinner("Extracting, chunking and embedding…"):
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                     tmp.write(upload.getbuffer())
                     tmp_path = tmp.name
                 try:
                     counts = backend.replace_document(tmp_path)
+                except Exception as exc:  # noqa: BLE001 - shown to the user below
+                    st.error(str(exc))
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
 
-            st.session_state.messages = []
-            st.success(f"Indexed {counts['chunks']} chunks and {counts['tables']} tables.")
-            st.rerun()
+            if counts:
+                st.session_state.messages = []
+                st.success(f"Indexed {counts['chunks']} chunks and {counts['tables']} tables.")
+                st.rerun()
     else:
         st.caption("Indexing is managed server-side in this mode.")
 
@@ -77,7 +81,7 @@ with st.sidebar:
         st.rerun()
 
 
-st.title("Ask the paper")
+st.title("Ask your document")
 st.caption(
     "Answers are grounded in retrieved passages and tables. Every response shows the "
     "sources it used, so you can check it rather than trust it."
@@ -95,7 +99,7 @@ for message in st.session_state.messages:
             st.caption(message["meta"])
 
 
-if question := st.chat_input("e.g. What accuracy does the Weather-Only ablation achieve?"):
+if question := st.chat_input("Ask something about the indexed document…"):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)

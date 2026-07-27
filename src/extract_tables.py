@@ -1,31 +1,60 @@
 import re
 import sys
 
+import fitz
 import pdfplumber
 
-from extract_text import PDF_PATH, extract_text
+from extract_text import PDF_PATH
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-# Captions are line-wrapped in the extracted text, so match the label then take the
-# following text up to a blank line or the start of the table's own contents.
-CAPTION_PATTERN = re.compile(r"TABLE\s+([IVXLC]+)\s*[:.]\s*(.{0,160})", re.DOTALL)
+# Matches the caption styles documents actually use: "TABLE IV:" (Roman, common in
+# IEEE papers), "Table 1." (Arabic, most reports), "Table A2 —", and so on.
+#
+# Anchored to the start of a line, which is what separates a caption from a passing
+# reference: captions sit on their own line, whereas "as detailed in Table I" appears
+# mid-sentence. Without the anchor, body-text references get captured as captions and
+# every table on the page is described by the wrong text.
+CAPTION_PATTERN = re.compile(
+    r"^\s*Table\s+([IVXLC]+|[A-Z]?\.?\d+[a-z]?)\s*[:.–—-]?\s+(.{0,200})",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
 
 
-def extract_captions(pdf_path: str) -> list[str]:
-    """Pull each table's printed caption from the PDF text, in page order.
+def extract_captions_by_page(pdf_path: str) -> dict[int, list[str]]:
+    """Find printed table captions, grouped by the page they appear on.
 
-    These are the paper's own natural-language descriptions ("Distribution of dataset
-    samples across eight tomato disease classes"), which is what a question actually
-    resembles — a raw markdown grid of digits is not.
+    Matching captions to tables per page rather than by global order keeps them
+    aligned when a document has captionless tables, or captions the pattern misses —
+    a mismatch would otherwise shift every later caption onto the wrong table.
     """
-    text = extract_text(pdf_path)
-    captions = []
-    for match in CAPTION_PATTERN.finditer(text):
-        label, tail = match.group(1), match.group(2)
-        tail = " ".join(tail.split("\n\n")[0].split())
-        captions.append(f"Table {label}: {_trim_data_bleed(tail)}".strip())
-    return captions
+    doc = fitz.open(pdf_path)
+    by_page: dict[int, list[str]] = {}
+
+    for page_num, page in enumerate(doc, start=1):
+        captions = []
+        for match in CAPTION_PATTERN.finditer(page.get_text()):
+            label, tail = match.group(1), match.group(2)
+            tail = " ".join(tail.split("\n\n")[0].split())
+            captions.append(f"Table {label}: {_trim_data_bleed(tail)}".strip().rstrip(":"))
+        if captions:
+            by_page[page_num] = captions
+
+    doc.close()
+    return by_page
+
+
+def describe_from_headers(table: list[list[str]], page: int) -> str:
+    """Synthesise a caption from the table's own header row.
+
+    Plenty of documents have unlabelled tables. Embedding a bare grid of digits makes
+    it effectively unretrievable, so give it *some* natural-language description —
+    column names are the most meaningful text a table carries on its own.
+    """
+    header = [str(cell).strip() for cell in table[0] if cell and str(cell).strip()]
+    if not header:
+        return f"Table on page {page}"
+    return f"Table on page {page} with columns: {', '.join(header)}"
 
 
 def _trim_data_bleed(text: str, max_numeric_run: int = 2) -> str:
@@ -67,18 +96,33 @@ def is_real_table(table: list[list[str]]) -> bool:
 
 
 def extract_tables(pdf_path: str) -> list[dict]:
+    captions_by_page = extract_captions_by_page(pdf_path)
     results = []
+
     with pdfplumber.open(pdf_path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
+            page_captions = captions_by_page.get(page_num, [])
+            index_on_page = 0
+
             for table in page.extract_tables():
                 if not is_real_table(table):
                     continue
-                results.append({"page": page_num, "markdown": table_to_markdown(table)})
 
-    # Tables and captions both come out in page order, so they pair up positionally.
-    captions = extract_captions(pdf_path)
-    for i, t in enumerate(results):
-        t["caption"] = captions[i] if i < len(captions) else f"Table on page {t['page']}"
+                # Pair with the caption at the same position on the same page; fall
+                # back to describing the table by its own headers when unlabelled.
+                if index_on_page < len(page_captions):
+                    caption = page_captions[index_on_page]
+                else:
+                    caption = describe_from_headers(table, page_num)
+
+                results.append(
+                    {
+                        "page": page_num,
+                        "markdown": table_to_markdown(table),
+                        "caption": caption,
+                    }
+                )
+                index_on_page += 1
 
     return results
 

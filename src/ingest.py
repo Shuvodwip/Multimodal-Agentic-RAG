@@ -58,6 +58,15 @@ def ingest_tables(pdf_path: str = PDF_PATH) -> int:
     return len(tables)
 
 
+# A PDF with no text layer (a scan or photographed pages) extracts almost nothing.
+# Indexing it would "succeed" and then answer nothing, so fail loudly instead.
+MIN_EXTRACTABLE_CHARS = 200
+
+
+class NoExtractableTextError(RuntimeError):
+    """Raised when a PDF yields too little text to index."""
+
+
 def replace_document(pdf_path: str) -> dict:
     """Index a new PDF, discarding whatever was indexed before.
 
@@ -65,6 +74,13 @@ def replace_document(pdf_path: str) -> dict:
     a shorter new document would otherwise leave stale chunks from the longer old one
     behind and answerable. Clearing first keeps retrieval honest.
     """
+    text = extract_text(pdf_path)
+    if len(text.strip()) < MIN_EXTRACTABLE_CHARS:
+        raise NoExtractableTextError(
+            "This PDF has almost no selectable text — it is probably a scan or images "
+            "of pages. Text extraction cannot read those; the file needs OCR first."
+        )
+
     existing = collection.get()["ids"]
     if existing:
         collection.delete(ids=existing)

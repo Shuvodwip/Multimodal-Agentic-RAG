@@ -27,7 +27,9 @@ tools = [retrieve_documents, calculator, web_search]
 llm = ChatGroq(model=AGENT_MODEL).bind_tools(tools)
 
 SYSTEM_PROMPT = (
-    "You answer questions about a specific research paper using the retrieve_documents tool.\n\n"
+    "You answer questions about the document the user has indexed, using the "
+    "retrieve_documents tool. The document could be anything — a report, a manual, a "
+    "contract, a paper — so never assume its subject; rely on what retrieval returns.\n\n"
     "Ground every number, statistic, and experimental result in a tool result: call "
     "retrieve_documents before stating or calculating one. Retrieved context may include "
     "markdown tables — find the relevant row and column, and quote the value exactly as it "
