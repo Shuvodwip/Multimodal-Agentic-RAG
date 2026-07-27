@@ -1,0 +1,47 @@
+# Full local stack: build the index, then serve it.
+#
+#   docker compose up            # ingest (once), then start the API on :8000
+#   docker compose up api        # skip ingestion if the volume is already populated
+#   docker compose down          # stop; the vector store survives in the volume
+#
+# Langfuse is deliberately not a service here. Self-hosting it needs ClickHouse,
+# Postgres, Redis and MinIO — roughly 5GB of RAM — so this stack points at Langfuse
+# Cloud's free tier via LANGFUSE_* in .env instead.
+
+services:
+  ingest:
+    build: .
+    image: agentic-rag:latest
+    command: ["python", "src/ingest.py"]
+    env_file: .env
+    volumes:
+      # Source document stays on the host: it is unpublished and must not enter an image.
+      - ./data:/app/data:ro
+      - chroma-data:/app/.chroma
+    restart: "no"
+
+  api:
+    build: .
+    image: agentic-rag:latest
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - chroma-data:/app/.chroma
+    depends_on:
+      ingest:
+        # Wait for ingestion to finish rather than merely start, so the API never
+        # comes up against an empty or half-written index.
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  # Named volume rather than a host bind mount: Docker Desktop's Windows bind mounts
+  # do not map the container's non-root uid, which leaves ChromaDB unable to write.
+  chroma-data:

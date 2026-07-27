@@ -42,6 +42,12 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=app:app src/ ./src/
 
+# Create the vector-store directory owned by the runtime user *before* anything mounts
+# over it. Docker initialises an empty named volume from the image path it covers,
+# ownership included — without this the volume arrives root-owned and ChromaDB, running
+# as `app`, cannot create its SQLite file.
+RUN mkdir -p /app/.chroma && chown app:app /app/.chroma
+
 USER app
 
 # Bake the embedding model into the image so the first request doesn't pay a download.
