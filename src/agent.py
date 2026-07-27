@@ -14,7 +14,13 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from images import get_figures
-from tools import calculator, find_figures, retrieve_documents, web_search
+from tools import (
+    calculator,
+    document_overview,
+    find_figures,
+    retrieve_documents,
+    web_search,
+)
 from tracing import TRACING_ENABLED, flush, get_callback_handler, span, trace_url
 
 load_dotenv()
@@ -25,13 +31,17 @@ sys.stdout.reconfigure(encoding="utf-8")
 # daily token budget on Groq's free tier than llama-3.3-70b (500K vs 100K).
 AGENT_MODEL = "llama-3.1-8b-instant"
 
-tools = [retrieve_documents, find_figures, calculator, web_search]
+tools = [retrieve_documents, document_overview, find_figures, calculator, web_search]
 llm = ChatGroq(model=AGENT_MODEL).bind_tools(tools)
 
 SYSTEM_PROMPT = (
-    "You answer questions about the document the user has indexed, using the "
-    "retrieve_documents tool. The document could be anything — a report, a manual, a "
-    "contract, a paper — so never assume its subject; rely on what retrieval returns.\n\n"
+    "You answer questions about the document the user has indexed. The document could "
+    "be anything — a report, a CV, a manual, a contract, a paper — so never assume its "
+    "subject; rely on what the tools return.\n\n"
+    "Choose the right tool. For questions about the document as a whole (what is this, "
+    "who is it about, summarise it, what does it cover), call document_overview: search "
+    "cannot find a title block, because a header names its subject without discussing "
+    "it. For questions about specific facts, call retrieve_documents.\n\n"
     "Ground every number, statistic, and experimental result in a tool result: call "
     "retrieve_documents before stating or calculating one. Retrieved context may include "
     "markdown tables — find the relevant row and column, and quote the value exactly as it "

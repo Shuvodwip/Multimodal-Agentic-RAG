@@ -1,5 +1,6 @@
 import ast
 import operator
+import os
 import sys
 
 from ddgs import DDGS
@@ -8,9 +9,13 @@ from langchain_core.tools import tool
 from hybrid_search import hybrid_search
 from images import search_images
 from rerank import RERANK_ENABLED
+from store_chunks import collection
 from tracing import span
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+# Enough to carry a title block, author, and opening paragraph without flooding context.
+OVERVIEW_CHUNKS = 3
 
 
 @tool
@@ -86,6 +91,48 @@ def calculator(expression: str) -> str:
         if obs:
             obs.update(output=result, level=level, status_message=message)
         return result
+
+
+@tool
+def document_overview() -> str:
+    """Show the beginning of the document and its size.
+
+    Use for questions about the document as a whole — what it is, who it concerns,
+    what it covers, or a summary. Similarity search cannot answer these: a title block
+    or header contains the subject but does not *discuss* it, so nothing in the query
+    matches it. This returns the opening passages directly instead of searching.
+    """
+    with span("document_overview", as_type="retriever") as obs:
+        items = collection.get(include=["documents", "metadatas"])
+        if not items["ids"]:
+            return "No document is currently indexed."
+
+        # Restore reading order: ids are positional but come back unsorted.
+        def position(doc_id: str) -> tuple[int, int]:
+            kind, _, number = doc_id.rpartition("_")
+            return (0 if kind == "chunk" else 1, int(number) if number.isdigit() else 0)
+
+        ordered = sorted(zip(items["ids"], items["documents"]), key=lambda p: position(p[0]))
+        opening = [p for p in ordered if p[0].startswith("chunk_")][:OVERVIEW_CHUNKS]
+
+        source = ""
+        for meta in items["metadatas"]:
+            if meta.get("source"):
+                source = os.path.basename(meta["source"])
+                break
+
+        header = (
+            f"Document: {source or 'unknown'} — {len(items['ids'])} indexed passages.\n"
+            "Opening of the document:\n\n"
+        )
+        body = "\n\n".join(f"[{doc_id}]\n{text}" for doc_id, text in opening)
+
+        if obs:
+            obs.update(
+                output={"returned": [doc_id for doc_id, _ in opening], "source": source},
+                metadata={"strategy": "positional (document start)"},
+            )
+        return header + body
 
 
 @tool
