@@ -1,3 +1,9 @@
+# Deliberately does not run the RAGAS eval suite (src/run_eval.py). It needs both the
+# private source document (data/ is gitignored — CI has no vector store to retrieve
+# from) and a real Groq quota, so it stays a manual pre-merge command instead of
+# something that would either fail to fetch private data or burn API quota on every
+# push. See docs/evaluation.md.
+
 name: CI
 
 on:
